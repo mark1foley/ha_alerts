@@ -1,0 +1,177 @@
+blueprint:
+  name: Standard Alert
+  description: >
+    Creates an alert automation pair (on/off) using the central alert framework.
+    Handles persistent notifications, mobile push, TTS (critical), repeat while
+    active, and acknowledgement via push action button or dashboard.
+    For alerts requiring a camera snapshot or custom action buttons,
+    use the Security Alert blueprint instead.
+  domain: automation
+  input:
+    trigger_entity:
+      name: Alert entity
+      description: >
+        The binary sensor (or other entity) whose state triggers this alert.
+        For template-based alerts, create the binary sensor in
+        config/template/alerts.yaml first.
+      selector:
+        entity:
+          domain: binary_sensor
+
+    trigger_state:
+      name: Active state
+      description: The state of the entity that means the alert is active.
+      default: "on"
+      selector:
+        select:
+          options: ["on", "off"]
+
+    severity:
+      name: Severity
+      description: >
+        Controls notification channels, interruption level, repeat behaviour,
+        and acknowledgement availability. See framework reference for full matrix.
+      selector:
+        select:
+          options:
+            - label: "Info — persistent notification only, no mobile push"
+              value: info
+            - label: "Minor — mobile push (normal priority), no repeat"
+              value: minor
+            - label: "Major — mobile push (time-sensitive), repeats every 15 min, acknowledgeable"
+              value: major
+            - label: "Critical — mobile push (critical), TTS, repeats every 5 min, acknowledgeable"
+              value: critical
+
+    alert_title:
+      name: Alert title
+      description: Short title shown as the notification heading.
+      selector:
+        text:
+
+    alert_message:
+      name: Alert message
+      description: Full message body describing the alert condition.
+      selector:
+        text:
+          multiline: true
+
+    alert_tag:
+      name: Alert tag
+      description: >
+        Unique snake_case identifier for this alert (e.g. garage_door_open).
+        Must be unique across all alerts. Used to deduplicate and clear notifications.
+      selector:
+        text:
+
+    trigger_for:
+      name: Trigger delay
+      description: >
+        How long the entity must be in the active state before the alert fires.
+        Use 0 for immediate. Useful to avoid alerts on brief state changes.
+      default: "00:00:00"
+      selector:
+        duration:
+
+    tts_target:
+      name: TTS media player (optional)
+      description: >
+        Media player for TTS announcements. If left empty, the default player
+        defined in script.alert_notify is used. Only applies to Critical severity
+        (or if you want to override for a specific alert).
+      default: ""
+      selector:
+        entity:
+          domain: media_player
+
+variables:
+  # Make inputs available to templates
+  severity: !input severity
+  alert_tag: !input alert_tag
+  alert_title: !input alert_title
+  alert_message: !input alert_message
+  tts_target: !input tts_target
+  trigger_entity: !input trigger_entity
+  trigger_state: !input trigger_state
+
+# ── Triggers ────────────────────────────────────────────────────────────────
+trigger:
+  - platform: state
+    entity_id: !input trigger_entity
+    to: !input trigger_state
+    for: !input trigger_for
+    id: alert_on
+
+  - platform: state
+    entity_id: !input trigger_entity
+    from: !input trigger_state
+    id: alert_off
+
+  # Mobile push acknowledgement action (major and critical only)
+  - platform: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "ACK_{{ alert_tag | upper }}"
+    id: alert_ack
+
+# ── Mode ────────────────────────────────────────────────────────────────────
+mode: restart
+
+# ── Actions ────────────────────────────────────────────────────────────────
+action:
+  - choose:
+
+      # ── Alert activates ──────────────────────────────────────────────────
+      - conditions:
+          - condition: trigger
+            id: alert_on
+        sequence:
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: !input trigger_entity
+                  state: !input trigger_state
+              sequence:
+                - service: script.alert_notify
+                  data:
+                    severity: "{{ severity }}"
+                    title: "{{ alert_title }}"
+                    message: "{{ alert_message }}"
+                    tag: "{{ alert_tag }}"
+                    tts_target: >-
+                      {% if tts_target != '' %}{{ tts_target }}{% endif %}
+
+                # Delay between repeats — only major and critical repeat
+                - if:
+                    - condition: template
+                      value_template: "{{ severity in ['major', 'critical'] }}"
+                  then:
+                    - delay: >-
+                        {% if severity == 'critical' %}00:05:00
+                        {% else %}00:15:00{% endif %}
+                  else:
+                    # Info and minor: fire once then exit the loop
+                    - stop: "Non-repeating severity — alert sent once"
+
+      # ── Alert resolves ───────────────────────────────────────────────────
+      - conditions:
+          - condition: trigger
+            id: alert_off
+        sequence:
+          - service: script.alert_clear
+            data:
+              tag: "{{ alert_tag }}"
+              acknowledged: false
+
+      # ── Acknowledgement (push action or dashboard button) ────────────────
+      - conditions:
+          - condition: trigger
+            id: alert_ack
+        sequence:
+          - service: script.alert_clear
+            data:
+              tag: "{{ alert_tag }}"
+              acknowledged: true
+          # Stop the repeat loop by restarting the automation in a no-op state.
+          # mode: restart means the running instance (the repeat loop) is cancelled
+          # when this trigger fires, so no further action is needed here.
