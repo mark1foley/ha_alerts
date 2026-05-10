@@ -16,7 +16,6 @@ blueprint:
         config/template/alerts.yaml first.
       selector:
         entity:
-          domain: binary_sensor
 
     trigger_state:
       name: Active state
