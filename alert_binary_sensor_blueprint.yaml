@@ -1,32 +1,32 @@
+# Creates an alert binary sensor with a consistent attribute schema for use
+# with the alert framework. The sensor is automatically picked up by the
+# shared alert automation, repeat automation, badge counter, and dashboard
+# card via the automated_alert attribute flag.
+# 
+# Usage: Add a use_blueprint entry to your templates.yaml for each alert.
+# 
+# Example:
+#   - use_blueprint:
+#       path: local/alert_binary_sensor_blueprint.yaml
+#       input:
+#         trigger_entity: cover.garage_door
+#         trigger_state: open
+#         severity: major
+#         title: Garage Door Open
+#         message: The garage door has been open and no one is home
+#         tag: garage_door_open
+#     unique_id: alert_garage_door_open
+
+# Required attributes produced:
+#   automated_alert: true   (used for filtering by all framework components)
+#   severity:               info | minor | major | critical
+#   title:                  Short alert title
+#   message:                Full alert message
+#   tag:                    Unique snake_case identifier
+
 blueprint:
   name: Alert Binary Sensor
-  description: >
-    Creates an alert binary sensor with a consistent attribute schema for use
-    with the alert framework. The sensor is automatically picked up by the
-    shared alert automation, repeat automation, badge counter, and dashboard
-    card via the automated_alert attribute flag.
-
-    Usage: Add a use_blueprint entry to your templates.yaml for each alert.
-
-    Example:
-      - use_blueprint:
-          path: local/alert_binary_sensor_blueprint.yaml
-          input:
-            trigger_entity: cover.garage_door
-            trigger_state: open
-            severity: major
-            title: Garage Door Open
-            message: The garage door has been open and no one is home
-            tag: garage_door_open
-        unique_id: alert_garage_door_open
-
-    Required attributes produced:
-      automated_alert: true   (used for filtering by all framework components)
-      severity:               info | minor | major | critical
-      title:                  Short alert title
-      message:                Full alert message
-      tag:                    Unique snake_case identifier
-
+  description: Creates an alert binary sensor with a consistent attribute schema for use with the alert framework. 
   domain: template
   author: Local
   homeassistant:
