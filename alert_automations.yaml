@@ -1,0 +1,225 @@
+###############################################################################
+# Alert Framework — Shared Automations
+#
+# Two automations manage all alerts:
+#
+# 1. alert_state_change  — fires when any alert binary sensor turns on or off.
+#                          Handles initial notification and resolution.
+#
+# 2. alert_repeat        — fires on a time pattern. Re-notifies all active,
+#                          unacknowledged major/critical alerts.
+#
+# Both read alert metadata (severity, title, message, tag) from the binary
+# sensor attributes — no per-alert configuration needed here.
+###############################################################################
+
+automation:
+
+  # ── 1. Alert state change ──────────────────────────────────────────────────
+  - id: alert_state_change
+    alias: "Alert Framework: State Change"
+    description: >
+      Handles initial notification when an alert activates, and clears
+      notifications when an alert resolves. Reads all metadata from the
+      triggering binary sensor's attributes.
+    mode: parallel
+    max: 20
+
+    trigger:
+      - platform: state
+        entity_id: "binary_sensor._placeholder_"  # replaced by entity filter below
+        to: "on"
+        id: alert_on
+      - platform: state
+        entity_id: "binary_sensor._placeholder_"
+        to: "off"
+        id: alert_off
+
+    # Filter to only binary sensors with automated_alert: true
+    trigger_variables:
+      is_alert: >
+        {{ trigger.to_state.attributes.get('automated_alert', false) }}
+
+    condition:
+      - condition: template
+        value_template: "{{ is_alert }}"
+
+    action:
+      - variables:
+          severity: "{{ trigger.to_state.attributes.severity }}"
+          title: "{{ trigger.to_state.attributes.title }}"
+          message: "{{ trigger.to_state.attributes.message }}"
+          tag: "{{ trigger.to_state.attributes.tag }}"
+          ack_helper: "{{ trigger.to_state.attributes.acknowledged_helper }}"
+
+      - choose:
+
+          # ── Alert activates ────────────────────────────────────────────────
+          - conditions:
+              - condition: trigger
+                id: alert_on
+            sequence:
+              # Reset acknowledgement if helper is configured
+              - if:
+                  - condition: template
+                    value_template: "{{ ack_helper != '' }}"
+                then:
+                  - service: input_boolean.turn_off
+                    target:
+                      entity_id: "{{ ack_helper }}"
+
+              # Send initial notification
+              - service: script.alert_notify
+                data:
+                  severity: "{{ severity }}"
+                  title: "{{ title }}"
+                  message: "{{ message }}"
+                  tag: "{{ tag }}"
+
+          # ── Alert resolves ─────────────────────────────────────────────────
+          - conditions:
+              - condition: trigger
+                id: alert_off
+            sequence:
+              # Read tag from from_state since to_state attributes may be gone
+              - variables:
+                  tag_off: "{{ trigger.from_state.attributes.tag }}"
+                  ack_helper_off: "{{ trigger.from_state.attributes.acknowledged_helper }}"
+
+              # Reset acknowledgement helper
+              - if:
+                  - condition: template
+                    value_template: "{{ ack_helper_off != '' }}"
+                then:
+                  - service: input_boolean.turn_off
+                    target:
+                      entity_id: "{{ ack_helper_off }}"
+
+              - service: script.alert_clear
+                data:
+                  tag: "{{ tag_off }}"
+                  acknowledged: false
+
+  # ── 2. Alert repeat ────────────────────────────────────────────────────────
+  - id: alert_repeat
+    alias: "Alert Framework: Repeat"
+    description: >
+      Fires every 5 minutes. Re-notifies all active, unacknowledged
+      major and critical alert binary sensors.
+      Major alerts repeat every 15 min (checked via time pattern modulo).
+      Critical alerts repeat every 5 min.
+      Note: the interval between the first and second notification for a
+      newly triggered alert may be less than the full repeat interval,
+      depending on where in the cycle the alert activated.
+    mode: single
+    max_exceeded: silent
+
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+
+    action:
+      - variables:
+          # Build list of active, unacknowledged major/critical alert sensors
+          active_alerts: >
+            {{ states.binary_sensor
+                | selectattr('attributes.automated_alert', 'defined')
+                | selectattr('attributes.automated_alert', 'eq', true)
+                | selectattr('state', 'eq', 'on')
+                | selectattr('attributes.severity', 'in', ['major', 'critical'])
+                | list }}
+
+      - repeat:
+          for_each: "{{ active_alerts }}"
+          sequence:
+            - variables:
+                alert: "{{ repeat.item }}"
+                severity: "{{ alert.attributes.severity }}"
+                ack_helper: "{{ alert.attributes.acknowledged_helper }}"
+                is_acknowledged: >
+                  {% if ack_helper != '' %}
+                    {{ is_state(ack_helper, 'on') }}
+                  {% else %}
+                    false
+                  {% endif %}
+                # For major alerts, only repeat on every 3rd cycle (15 min)
+                # For critical, repeat every cycle (5 min)
+                is_due: >
+                  {% if severity == 'critical' %}
+                    true
+                  {% elif severity == 'major' %}
+                    {{ now().minute % 15 == 0 }}
+                  {% else %}
+                    false
+                  {% endif %}
+
+            - if:
+                - condition: template
+                  value_template: "{{ not is_acknowledged and is_due }}"
+              then:
+                - service: script.alert_notify
+                  data:
+                    severity: "{{ severity }}"
+                  # Re-read attributes fresh at notify time
+                    title: "{{ alert.attributes.title }}"
+                    message: "{{ alert.attributes.message }}"
+                    tag: "{{ alert.attributes.tag }}"
+
+  # ── 3. Acknowledgement via mobile push action ──────────────────────────────
+  - id: alert_acknowledge
+    alias: "Alert Framework: Acknowledge"
+    description: >
+      Listens for mobile push notification action button presses.
+      Matches the action to the correct alert sensor and sets its
+      acknowledgement helper, stopping further repeats and clearing
+      the mobile notification tray.
+    mode: parallel
+    max: 20
+
+    trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.event.data.action.startswith('ACK_') }}
+
+    action:
+      - variables:
+          # Extract tag from action identifier e.g. ACK_GARAGE_DOOR_OPEN → garage_door_open
+          action_tag: >
+            {{ trigger.event.data.action
+                | replace('ACK_', '')
+                | lower }}
+          # Find the matching alert sensor
+          matching_sensor: >
+            {{ states.binary_sensor
+                | selectattr('attributes.automated_alert', 'defined')
+                | selectattr('attributes.automated_alert', 'eq', true)
+                | selectattr('attributes.tag', 'defined')
+                | selectattr('attributes.tag', 'eq', action_tag)
+                | list
+                | first | default(none) }}
+
+      - if:
+          - condition: template
+            value_template: "{{ matching_sensor != none }}"
+        then:
+          - variables:
+              ack_helper: "{{ matching_sensor.attributes.acknowledged_helper }}"
+
+          # Set acknowledgement helper if configured
+          - if:
+              - condition: template
+                value_template: "{{ ack_helper != '' }}"
+            then:
+              - service: input_boolean.turn_on
+                target:
+                  entity_id: "{{ ack_helper }}"
+
+          # Clear mobile tray and stop repeats
+          - service: script.alert_clear
+            data:
+              tag: "{{ action_tag }}"
+              acknowledged: true
