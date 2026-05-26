@@ -125,6 +125,8 @@ variables:
 # ── Binary sensor definition ─────────────────────────────────────────────────
 # Blueprint inputs are exposed as variables for use in templates
 binary_sensor:
+  name: "Alert {{ tag | replace('_', ' ') | title }}"
+  unique_id: "alert_{{ tag }}"
   state: "{{ is_state(trigger_entity, trigger_state) }}"
   device_class: problem
   attributes:
