@@ -113,16 +113,24 @@ blueprint:
         entity:
           domain: input_boolean
 
+variables:
+  trigger_entity: !input trigger_entity
+  trigger_state: !input trigger_state
+  severity: !input severity
+  title: !input title
+  message: !input message
+  tag: !input tag
+  acknowledged_helper: !input acknowledged_helper
+
 # ── Binary sensor definition ─────────────────────────────────────────────────
 # Blueprint inputs are exposed as variables for use in templates
-
 binary_sensor:
-  - state: "{{ is_state(trigger_entity, trigger_state) }}"
-    device_class: problem
-    attributes:
-      automated_alert: true
-      severity: "{{ severity }}"
-      title: "{{ title }}"
-      message: "{{ message }}"
-      tag: "{{ tag }}"
-      acknowledged_helper: "{{ acknowledged_helper }}"
+  state: "{{ is_state(trigger_entity, trigger_state) }}"
+  device_class: problem
+  attributes:
+    automated_alert: true
+    severity: "{{ severity }}"
+    title: "{{ title }}"
+    message: "{{ message }}"
+    tag: "{{ tag }}"
+    acknowledged_helper: "{{ acknowledged_helper }}"
