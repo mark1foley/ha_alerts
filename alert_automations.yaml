@@ -4,7 +4,7 @@
 # Three automations manage all alerts. Paste each one individually into the
 # HA automation UI YAML editor (without the top-level automation: key).
 #
-# All automations reference group.automated_alert_sensors to identify alert
+# All automations reference binary_sensor..automated_alert_sensors to identify alert
 # binary sensors. Add new alert sensors to this group in groups.yaml.
 ###############################################################################
 
@@ -13,7 +13,7 @@
 # AUTOMATION 1: Alert Framework - State Change
 #
 # Fires when any entity changes state. Condition filters to members of
-# group.automated_alert_sensors only. Handles initial notification on
+# binary_sensor..automated_alert_sensors only. Handles initial notification on
 # activation and full clear on resolution.
 ###############################################################################
 
@@ -23,7 +23,7 @@ description: >
   Handles initial notification when an alert activates, and clears
   notifications when an alert resolves. Reads all metadata from the
   triggering binary sensor's attributes. Filters to alert sensors only
-  via group.automated_alert_sensors membership check.
+  via binary_sensor..automated_alert_sensors membership check.
 mode: parallel
 max: 20
 
@@ -40,7 +40,7 @@ trigger:
 condition:
   - condition: template
     value_template: >
-      {{ trigger.to_state.entity_id in expand('group.automated_alert_sensors')
+      {{ trigger.to_state.entity_id in expand('binary_sensor..automated_alert_sensors')
           | map(attribute='entity_id') | list }}
 
 action:
@@ -125,7 +125,7 @@ trigger:
 action:
   - repeat:
       for_each: >
-        {{ expand('group.automated_alert_sensors')
+        {{ expand('binary_sensor..automated_alert_sensors')
             | selectattr('state', 'eq', 'on')
             | selectattr('attributes.severity', 'in', ['major', 'critical'])
             | list }}
@@ -192,7 +192,7 @@ action:
       action_tag: >
         {{ trigger.event.data.action | replace('ACK_', '') | lower }}
       matching_sensor: >
-        {{ expand('group.automated_alert_sensors')
+        {{ expand('binary_sensor..automated_alert_sensors')
             | selectattr('attributes.tag', 'defined')
             | selectattr('attributes.tag', 'eq', action_tag)
             | list | first | default(none) }}
