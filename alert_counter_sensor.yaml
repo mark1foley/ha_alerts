@@ -1,0 +1,24 @@
+template:
+
+  # ── Active alert counter ───────────────────────────────────────────────────
+  # Counts all members of binary_sensor.automated_alert_sensors currently in state on.
+  # Drives the mobile app badge count. Badge represents unresolved alert
+  # conditions (system health indicator), not unread notifications.
+  # Acknowledgement does not affect the count - only condition resolution does.
+
+  - sensor:
+      - name: automated_alerts_active_count
+        unique_id: automated_alerts_active_count
+        state: >
+          {{ expand('binary_sensor.automated_alert_sensors')
+              | selectattr('state', 'eq', 'on')
+              | list
+              | count }}
+        unit_of_measurement: alerts
+        icon: >
+          {% set count = expand('binary_sensor.automated_alert_sensors')
+              | selectattr('state', 'eq', 'on')
+              | list | count %}
+          {% if count == 0 %}mdi:shield-check
+          {% elif count <= 2 %}mdi:shield-alert-outline
+          {% else %}mdi:shield-alert{% endif %}

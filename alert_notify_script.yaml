@@ -1,0 +1,97 @@
+script:
+  alert_notify:
+    alias: "Alert: Notify"
+    description: >
+      Central notification routing script for the alert framework.
+      Routes to persistent notification, mobile push, and TTS based on severity.
+      Called by alert automations - do not call directly from other automations.
+    mode: parallel
+    max: 20
+    fields:
+      severity:
+        description: "Alert severity level: info | minor | major | critical"
+        required: true
+        selector:
+          select:
+            options: [info, minor, major, critical]
+      title:
+        description: "Short alert title (shown as notification heading)"
+        required: true
+        selector:
+          text:
+      message:
+        description: "Full alert message body"
+        required: true
+        selector:
+          text:
+            multiline: true
+      tag:
+        description: >
+          Unique identifier for this alert (snake_case, e.g. garage_door_open).
+          Used to deduplicate and dismiss notifications. Must be stable across
+          repeat fires for the same alert.
+        required: true
+        selector:
+          text:
+      tts_target:
+        description: "Optional media_player entity for TTS (critical alerts only by default)"
+        required: false
+        selector:
+          entity:
+            domain: media_player
+
+    sequence:
+
+      # ── 1. Persistent notification (all severities) ────────────────────────
+      - service: persistent_notification.create
+        data:
+          title: "[{{ severity | upper }}] {{ title }}"
+          message: "{{ message }}"
+          notification_id: "alert_{{ tag }}"
+
+      # ── 2. Mobile push (minor, major, critical) ────────────────────────────
+      - if:
+          - condition: template
+            value_template: "{{ severity in ['minor', 'major', 'critical'] }}"
+        then:
+          - service: "notify.{{ severity }}_audience"
+            data:
+              title: "[{{ severity | upper }}] {{ title }}"
+              message: "{{ message }}"
+              data:
+                tag: "alert_{{ tag }}"
+                channel: "{{ severity }}"
+                push:
+                  interruption-level: >-
+                    {% if severity == 'critical' %}critical
+                    {% elif severity == 'major' %}time-sensitive
+                    {% else %}active{% endif %}
+                actions: >-
+                  {% if severity in ['major', 'critical'] %}
+                  [{"action": "ACK_{{ tag | upper }}", "title": "Acknowledge", "destructive": false}]
+                  {% else %}
+                  []
+                  {% endif %}
+
+      # ── 3. TTS (critical by default, or explicit tts_target supplied) ──────
+      - if:
+          - condition: template
+            value_template: "{{ severity == 'critical' or tts_target is defined }}"
+        then:
+          - service: tts.speak
+            data:
+              media_player_entity_id: "{{ tts_target | default('media_player.living_room') }}"
+              message: "Alert. {{ title }}. {{ message }}"
+
+      # ── 4. Update badge count ──────────────────────────────────────────────
+      - if:
+          - condition: template
+            value_template: "{{ severity in ['minor', 'major', 'critical'] }}"
+        then:
+          - delay: "00:00:02"
+          - service: "notify.{{ severity }}_audience"
+            data:
+              message: "{{ states('sensor.automated_alerts_active_count') }}"
+              data:
+                push:
+                  badge: "{{ states('sensor.automated_alerts_active_count') | int }}"

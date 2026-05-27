@@ -1,0 +1,69 @@
+script:
+  alert_clear:
+    alias: "Alert: Clear"
+    description: >
+      Dismisses a named alert from all surfaces: persistent notification,
+      mobile tray (all audience groups), and updates the badge count.
+      Called by alert automations and acknowledgement actions.
+    mode: parallel
+    max: 20
+    fields:
+      tag:
+        description: >
+          Unique identifier of the alert to clear (must match the tag used
+          in the corresponding alert_notify call).
+        required: true
+        selector:
+          text:
+      acknowledged:
+        description: >
+          Set to true when called from an acknowledgement action (clears mobile
+          tray and stops repeats, but keeps the persistent notification).
+          Set to false (default) when called on condition resolution (full clear).
+        required: false
+        default: false
+        selector:
+          boolean:
+
+    sequence:
+
+      # ── 1. Dismiss persistent notification (condition resolved only) ────────
+      - if:
+          - condition: template
+            value_template: "{{ not acknowledged }}"
+        then:
+          - service: persistent_notification.dismiss
+            data:
+              notification_id: "alert_{{ tag }}"
+
+      # ── 2. Clear mobile tray on all audience groups ────────────────────────
+      - service: notify.minor_audience
+        data:
+          message: clear_notification
+          data:
+            tag: "alert_{{ tag }}"
+
+      - service: notify.major_audience
+        data:
+          message: clear_notification
+          data:
+            tag: "alert_{{ tag }}"
+
+      - service: notify.critical_audience
+        data:
+          message: clear_notification
+          data:
+            tag: "alert_{{ tag }}"
+
+      # ── 3. Update badge count (condition resolved only) ────────────────────
+      - if:
+          - condition: template
+            value_template: "{{ not acknowledged }}"
+        then:
+          - delay: "00:00:02"
+          - service: notify.minor_audience
+            data:
+              message: "{{ states('sensor.automated_alerts_active_count') }}"
+              data:
+                push:
+                  badge: "{{ states('sensor.automated_alerts_active_count') | int }}"
