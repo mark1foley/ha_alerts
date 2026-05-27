@@ -1,13 +1,15 @@
+# Alert Binary Sensor Blueprint
+# ─────────────────────────────────────────────────────────────────────────────
 # Creates an alert binary sensor with a consistent attribute schema for use
 # with the alert framework. The sensor is automatically picked up by the
 # shared alert automation, repeat automation, badge counter, and dashboard
 # card via the automated_alert attribute flag.
-# 
+#
 # Usage: Add a use_blueprint entry to your templates.yaml for each alert.
-# 
+#
 # Example:
 #   - use_blueprint:
-#       path: local/alert_binary_sensor_blueprint.yaml
+#       path: mark1foley/alert_binary_sensor_blueprint.yaml
 #       input:
 #         trigger_entity: cover.garage_door
 #         trigger_state: open
@@ -15,29 +17,37 @@
 #         title: Garage Door Open
 #         message: The garage door has been open and no one is home
 #         tag: garage_door_open
-#     unique_id: alert_garage_door_open
-
-# Required attributes produced:
+#         acknowledged_helper: input_boolean.alert_ack_garage_door_open
+#
+# Attributes produced on the binary sensor:
 #   automated_alert: true   (used for filtering by all framework components)
 #   severity:               info | minor | major | critical
 #   title:                  Short alert title
 #   message:                Full alert message
 #   tag:                    Unique snake_case identifier
+#   acknowledged_helper:    input_boolean entity ID or empty string
+#
+# Entity ID and friendly name are derived automatically from the tag:
+#   tag: garage_door_open
+#   -> entity ID:      binary_sensor.alert_garage_door_open
+#   -> friendly name:  Alert Garage Door Open
+# ─────────────────────────────────────────────────────────────────────────────
 
 blueprint:
   name: Alert Binary Sensor
-  description: Creates an alert binary sensor with a consistent attribute schema for use with the alert framework. 
+  description: Creates an alert binary sensor with a consistent attribute schema for use with the alert framework.
   domain: template
-  author: Local
+  author: mark1foley
   homeassistant:
     min_version: "2024.6.0"
+  source_url: https://github.com/mark1foley/ha_alerts/blob/main/alert_binary_sensor_blueprint.yaml
 
   input:
     trigger_entity:
       name: Trigger entity
       description: >
         The entity whose state determines whether this alert is active.
-        Can be any entity type — binary sensor, cover, switch, input boolean etc.
+        Can be any entity type - binary sensor, cover, switch, input boolean etc.
         For complex conditions (multiple entities, numeric thresholds), create a
         template binary sensor first and reference it here.
       selector:
@@ -47,7 +57,7 @@ blueprint:
       name: Active state
       description: >
         The state of the trigger entity that means the alert is active.
-        Common values: "on", "open", "detected", "unlocked".
+        Common values: on, open, detected, unlocked.
       default: "on"
       selector:
         text:
@@ -56,20 +66,20 @@ blueprint:
       name: Severity
       description: >
         Controls notification channels, interruption level, and repeat behaviour.
-        info    — persistent notification only, no mobile push, no repeat
-        minor   — mobile push (normal priority), no repeat
-        major   — mobile push (time-sensitive), repeats every 15 min, acknowledgeable
-        critical — mobile push (critical), TTS, repeats every 5 min, acknowledgeable
+        info - persistent notification only, no mobile push, no repeat.
+        minor - mobile push (normal priority), no repeat.
+        major - mobile push (time-sensitive), repeats every 15 min, acknowledgeable.
+        critical - mobile push (critical), TTS, repeats every 5 min, acknowledgeable.
       selector:
         select:
           options:
-            - label: "Info — persistent notification only"
+            - label: "Info - persistent notification only"
               value: info
-            - label: "Minor — mobile push, no repeat"
+            - label: "Minor - mobile push, no repeat"
               value: minor
-            - label: "Major — mobile push, repeats every 15 min, acknowledgeable"
+            - label: "Major - mobile push, repeats every 15 min, acknowledgeable"
               value: major
-            - label: "Critical — mobile push, TTS, repeats every 5 min, acknowledgeable"
+            - label: "Critical - mobile push, TTS, repeats every 5 min, acknowledgeable"
               value: critical
 
     title:
@@ -82,10 +92,8 @@ blueprint:
       name: Alert message
       description: >
         Full message body providing context about the alert condition.
-        Can include the current state of other entities using templates —
-        but note these are evaluated at sensor definition time, not at
-        notification time. For dynamic messages, keep this static and
-        let the notification script add runtime context.
+        For dynamic messages referencing current entity states, keep this
+        static and rely on the notification script for runtime context.
       selector:
         text:
           multiline: true
@@ -96,8 +104,9 @@ blueprint:
         Unique snake_case identifier for this alert (e.g. garage_door_open).
         Must be unique across all alerts. Used to deduplicate and dismiss
         notifications across persistent and mobile channels.
-        Convention: describe the condition, not the entity
-        (garage_door_open not cover_garage_door).
+        Convention - describe the condition not the entity:
+        garage_door_open rather than cover_garage_door.
+        The entity ID and friendly name are derived from this value.
       selector:
         text:
 
@@ -113,6 +122,9 @@ blueprint:
         entity:
           domain: input_boolean
 
+# ── Variables ─────────────────────────────────────────────────────────────────
+# Expose blueprint inputs as variables for use in templates
+
 variables:
   trigger_entity: !input trigger_entity
   trigger_state: !input trigger_state
@@ -122,15 +134,17 @@ variables:
   tag: !input tag
   acknowledged_helper: !input acknowledged_helper
 
-# ── Binary sensor definition ─────────────────────────────────────────────────
-# Blueprint inputs are exposed as variables for use in templates
+# ── Binary sensor definition ──────────────────────────────────────────────────
+# Name and unique_id are derived from the tag input to ensure consistent
+# entity IDs across all alert sensors.
+
 binary_sensor:
   name: "Alert {{ tag | replace('_', ' ') | title }}"
   unique_id: "alert_{{ tag }}"
   state: "{{ is_state(trigger_entity, trigger_state) }}"
   device_class: problem
   attributes:
-    automated_alert: true
+    automated_alert: "{{ true }}"
     severity: "{{ severity }}"
     title: "{{ title }}"
     message: "{{ message }}"
