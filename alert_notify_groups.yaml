@@ -1,0 +1,30 @@
+###############################################################################
+# alert_notify_groups.yaml
+#
+# Notification audience groups for the alert framework.
+# Referenced by script.alert_notify and script.alert_clear.
+# No device references appear anywhere else in the framework.
+#
+# To add a new device, add it to the appropriate group(s) below.
+# Changes require a full HA restart (notify platform cannot be reloaded).
+#
+# Audience structure:
+#   minor_audience   — minor, major and critical alerts
+#   major_audience   — major and critical alerts
+#   critical_audience — critical alerts only
+###############################################################################
+
+- platform: group
+  name: minor_audience
+  services:
+    - action: mobile_app_mafone
+
+- platform: group
+  name: major_audience
+  services:
+    - action: mobile_app_mafone
+
+- platform: group
+  name: critical_audience
+  services:
+    - action: mobile_app_mafone

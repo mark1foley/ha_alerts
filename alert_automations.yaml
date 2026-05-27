@@ -12,36 +12,30 @@
 ###############################################################################
 # AUTOMATION 1: Alert Framework - State Change
 #
-# Fires on all state changes. Condition filters to members of
-# binary_sensor.automated_alert_sensors only. Handles initial notification
-# on activation and full clear on resolution.
+# Triggered by binary_sensor.automated_alert_sensors group — fires when any
+# member changes state. trigger.to_state.entity_id identifies which member
+# fired. Handles initial notification on activation and full clear on resolution.
 ###############################################################################
 
 - id: alert_framework_state_change
   alias: "Alert Framework: State Change"
   description: >
     Handles initial notification when an alert activates, and clears
-    notifications when an alert resolves. Reads all metadata from the
-    triggering binary sensor's attributes. Filters to alert sensors only
-    via binary_sensor.automated_alert_sensors group membership check.
+    notifications when an alert resolves. Triggered by state changes on
+    binary_sensor.automated_alert_sensors group — fires when any member
+    changes state. Reads metadata from the triggering member's attributes.
   mode: parallel
   max: 20
 
   trigger:
     - platform: state
-      entity_id: all
-      id: alert_on
+      entity_id: binary_sensor.automated_alert_sensors
       to: "on"
+      id: alert_on
     - platform: state
-      entity_id: all
-      id: alert_off
+      entity_id: binary_sensor.automated_alert_sensors
       to: "off"
-
-  condition:
-    - condition: template
-      value_template: >
-        {{ trigger.to_state.entity_id in expand('binary_sensor.automated_alert_sensors')
-            | map(attribute='entity_id') | list }}
+      id: alert_off
 
   action:
     - variables:
