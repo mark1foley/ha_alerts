@@ -2,8 +2,10 @@ script:
   alert_clear:
     alias: "Alert: Clear"
     description: >
-      Dismisses a named alert from all surfaces: persistent notification,
-      mobile tray (all audience groups), and updates the badge count.
+      Dismisses a named alert from all surfaces: persistent notification and
+      mobile tray (all audience groups).
+      Badge count is handled automatically by the Alert Framework: Badge Sync
+      automation which triggers on the group state change.
       Called by alert automations and acknowledgement actions.
     mode: parallel
     max: 20
@@ -54,16 +56,3 @@ script:
           message: clear_notification
           data:
             tag: "alert_{{ tag }}"
-
-      # ── 3. Update badge count (condition resolved only) ────────────────────
-      - if:
-          - condition: template
-            value_template: "{{ not acknowledged }}"
-        then:
-          - delay: "00:00:02"
-          - service: notify.minor_audience
-            data:
-              message: "{{ states('sensor.automated_alerts_active_count') }}"
-              data:
-                push:
-                  badge: "{{ states('sensor.automated_alerts_active_count') | int }}"

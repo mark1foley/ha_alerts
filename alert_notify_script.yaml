@@ -4,6 +4,7 @@ script:
     description: >
       Central notification routing script for the alert framework.
       Routes to persistent notification, mobile push, and TTS based on severity.
+      Badge count is handled separately by the Alert Framework: Badge Sync automation.
       Called by alert automations - do not call directly from other automations.
     mode: parallel
     max: 20
@@ -31,6 +32,20 @@ script:
           Used to deduplicate and dismiss notifications. Must be stable across
           repeat fires for the same alert.
         required: true
+        selector:
+          text:
+      image_path:
+        description: "Optional path to image file to attach to mobile notification"
+        required: false
+        default: ""
+        selector:
+          text:
+      dashboard_url:
+        description: >
+          Optional Lovelace dashboard URL to navigate to when notification is tapped.
+          Falls back to input_text.automated_alert_default_dashboard if empty.
+        required: false
+        default: ""
         selector:
           text:
       tts_target:
@@ -61,6 +76,16 @@ script:
               data:
                 tag: "alert_{{ tag }}"
                 channel: "{{ severity }}"
+                # Navigate to per-alert dashboard or global default on notification tap
+                url: >-
+                  {% if dashboard_url != '' %}
+                    {{ dashboard_url }}
+                  {% else %}
+                    {{ states('input_text.automated_alert_default_dashboard') }}
+                  {% endif %}
+                # Attach image if provided
+                image: >-
+                  {% if image_path != '' %}{{ image_path }}{% endif %}
                 push:
                   interruption-level: >-
                     {% if severity == 'critical' %}critical
@@ -82,16 +107,3 @@ script:
             data:
               media_player_entity_id: "{{ tts_target | default('media_player.living_room') }}"
               message: "Alert. {{ title }}. {{ message }}"
-
-      # ── 4. Update badge count ──────────────────────────────────────────────
-      - if:
-          - condition: template
-            value_template: "{{ severity in ['minor', 'major', 'critical'] }}"
-        then:
-          - delay: "00:00:02"
-          - service: "notify.{{ severity }}_audience"
-            data:
-              message: "{{ states('sensor.automated_alerts_active_count') }}"
-              data:
-                push:
-                  badge: "{{ states('sensor.automated_alerts_active_count') | int }}"

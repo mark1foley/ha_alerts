@@ -13,8 +13,9 @@
 # AUTOMATION 1: Alert Framework - State Change
 #
 # Triggered by binary_sensor.automated_alert_sensors group — fires when any
-# member changes state. trigger.to_state.entity_id identifies which member
-# fired. Handles initial notification on activation and full clear on resolution.
+# member changes state. trigger.to_state.attributes.entity_id | first gives
+# the specific member that changed. Attributes read via states[member_id].
+# Handles initial notification on activation and full clear on resolution.
 ###############################################################################
 
 - id: alert_framework_state_change
@@ -39,11 +40,16 @@
 
   action:
     - variables:
-        severity: "{{ trigger.to_state.attributes.get('severity', 'minor') }}"
-        title: "{{ trigger.to_state.attributes.get('title', 'Alert') }}"
-        message: "{{ trigger.to_state.attributes.get('message', '') }}"
-        tag: "{{ trigger.to_state.attributes.get('tag', trigger.to_state.object_id) }}"
-        ack_helper: "{{ trigger.to_state.attributes.get('acknowledged_helper', '') }}"
+        member_id: "{{ trigger.to_state.attributes.entity_id | first }}"
+
+    - variables:
+        severity: "{{ state_attr(member_id, 'severity') }}"
+        title: "{{ state_attr(member_id, 'title') }}"
+        message: "{{ state_attr(member_id, 'message') }}"
+        tag: "{{ state_attr(member_id, 'tag') }}"
+        ack_helper: "{{ state_attr(member_id, 'acknowledged_helper') or '' }}"
+        image_path: "{{ state_attr(member_id, 'image_path') or '' }}"
+        dashboard_url: "{{ state_attr(member_id, 'dashboard_url') or '' }}"
 
     - choose:
 
@@ -66,27 +72,25 @@
                 title: "{{ title }}"
                 message: "{{ message }}"
                 tag: "{{ tag }}"
+                image_path: "{{ image_path }}"
+                dashboard_url: "{{ dashboard_url }}"
 
         # ── Alert resolves ─────────────────────────────────────────────────────
         - conditions:
             - condition: trigger
               id: alert_off
           sequence:
-            - variables:
-                tag_off: "{{ trigger.from_state.attributes.get('tag', trigger.from_state.object_id) }}"
-                ack_helper_off: "{{ trigger.from_state.attributes.get('acknowledged_helper', '') }}"
-
             - if:
                 - condition: template
-                  value_template: "{{ ack_helper_off != '' }}"
+                  value_template: "{{ ack_helper != '' }}"
               then:
                 - service: input_boolean.turn_off
                   target:
-                    entity_id: "{{ ack_helper_off }}"
+                    entity_id: "{{ ack_helper }}"
 
             - service: script.alert_clear
               data:
-                tag: "{{ tag_off }}"
+                tag: "{{ tag }}"
                 acknowledged: false
 
 
@@ -149,6 +153,8 @@
                   title: "{{ alert.attributes.title }}"
                   message: "{{ alert.attributes.message }}"
                   tag: "{{ alert.attributes.tag }}"
+                  image_path: "{{ alert.attributes.image_path or '' }}"
+                  dashboard_url: "{{ alert.attributes.dashboard_url or '' }}"
 
 
 ###############################################################################
@@ -208,28 +214,39 @@
 
 
 ###############################################################################
-# AUTOMATION 4: Alert Framework - Startup Badge Sync
+# AUTOMATION 5: Alert Framework - Badge Sync
 #
-# Fires 30 seconds after HA starts. Syncs badge count on all devices once
-# all entity states have been restored after restart.
+# Silently updates the app badge count whenever any alert binary sensor
+# changes state. Uses sensor.automated_alerts_active_count as the badge
+# value — always accurate, self-correcting. Runs in queued mode to handle
+# rapid state changes. Also handles startup sync via homeassistant trigger.
 ###############################################################################
 
-- id: alert_framework_startup_sync
-  alias: "Alert Framework: Startup Badge Sync"
+- id: alert_framework_badge_sync
+  alias: "Alert Framework: Badge Sync"
   description: >
-    Syncs the app badge count 30 seconds after HA starts. Gives time for all
-    entity states to be restored before reading the active alert count.
-  mode: single
+    Silently updates the app badge count when any alert binary sensor changes
+    state, and on HA startup. Always sets badge to the current active alert
+    count. If count is 0 the badge is cleared. Uses delete_alert message
+    which is silent on both iOS and Android.
+  mode: queued
+  max: 10
 
   trigger:
+    - platform: state
+      entity_id: binary_sensor.automated_alert_sensors
+      id: alert_state_change
     - platform: homeassistant
       event: start
+      id: startup
 
   action:
-    - delay: "00:00:30"
+    # Delay to allow sensor.automated_alerts_active_count to settle
+    - delay: >
+        {% if trigger.id == 'startup' %}00:00:30{% else %}00:00:02{% endif %}
     - service: notify.minor_audience
       data:
-        message: "{{ states('sensor.automated_alerts_active_count') }}"
+        message: delete_alert
         data:
           push:
             badge: "{{ states('sensor.automated_alerts_active_count') | int }}"

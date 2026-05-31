@@ -2,8 +2,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Creates an alert binary sensor with a consistent attribute schema for use
 # with the alert framework. The sensor is automatically picked up by the
-# shared alert automation, repeat automation, badge counter, and dashboard
-# card via the automated_alert attribute flag.
+# shared alert automations, badge sync, badge counter, and dashboard card
+# via the binary_sensor.automated_alert_sensors group.
 #
 # Usage: Add a use_blueprint entry to your templates.yaml for each alert.
 #
@@ -12,25 +12,37 @@
 #       path: mark1foley/alert_binary_sensor_blueprint.yaml
 #       input:
 #         trigger_entity: cover.garage_door
-#         trigger_state: open
 #         severity: major
 #         title: Garage Door Open
 #         message: The garage door has been open and no one is home
 #         tag: garage_door_open
 #         acknowledged_helper: input_boolean.alert_ack_garage_door_open
+#         dashboard_url: /lovelace/security
+#
+# After adding a new alert:
+#   1. Add use_blueprint entry to templates.yaml
+#   2. Add binary_sensor.alert_<tag> to binary_sensor.automated_alert_sensors group in UI
+#   3. Reload template entities (Developer Tools > YAML > Template entities)
+#   4. Restart HA if the blueprint file itself has changed
+#   5. Tag the binary sensor with the Alert label in the UI
 #
 # Attributes produced on the binary sensor:
-#   automated_alert: true   (used for filtering by all framework components)
+#   automated_alert: true   (self-documenting flag)
 #   severity:               info | minor | major | critical
 #   title:                  Short alert title
 #   message:                Full alert message
 #   tag:                    Unique snake_case identifier
 #   acknowledged_helper:    input_boolean entity ID or empty string
+#   image_path:             Path to image file or empty string
+#   dashboard_url:          Lovelace URL or empty string (falls back to global default)
 #
 # Entity ID and friendly name are derived automatically from the tag:
 #   tag: garage_door_open
 #   -> entity ID:      binary_sensor.alert_garage_door_open
 #   -> friendly name:  Alert Garage Door Open
+#
+# Framework constants referenced:
+#   input_text.automated_alert_default_dashboard  - global default dashboard URL
 # ─────────────────────────────────────────────────────────────────────────────
 
 blueprint:
@@ -47,20 +59,11 @@ blueprint:
       name: Trigger entity
       description: >
         The entity whose state determines whether this alert is active.
-        Can be any entity type - binary sensor, cover, switch, input boolean etc.
-        For complex conditions (multiple entities, numeric thresholds), create a
+        Must be an entity with an on/off state - binary sensor, input boolean etc.
+        For complex conditions (numeric thresholds, multiple entities), create a
         template binary sensor first and reference it here.
       selector:
         entity:
-
-    trigger_state:
-      name: Active state
-      description: >
-        The state of the trigger entity that means the alert is active.
-        Common values: on, open, detected, unlocked.
-      default: "on"
-      selector:
-        text:
 
     severity:
       name: Severity
@@ -116,31 +119,59 @@ blueprint:
         An input_boolean helper to track acknowledgement state for this alert.
         Required for major and critical alerts if acknowledgement is needed.
         Create the helper in the UI first, then select it here.
+        Naming convention: input_boolean.alert_ack_<tag>
         Leave empty for info and minor alerts.
       default: ""
       selector:
         entity:
           domain: input_boolean
 
+    image_path:
+      name: Alert image path (optional)
+      description: >
+        Full path to an image file to attach to the mobile notification.
+        The upstream process (camera automation, person detection etc.) is
+        responsible for capturing and storing the image before the alert fires.
+        Leave empty for text-only alerts.
+      default: ""
+      selector:
+        text:
+
+    dashboard_url:
+      name: Dashboard URL (optional)
+      description: >
+        Lovelace dashboard to navigate to when the notification is tapped.
+        e.g. /lovelace/security, /lovelace/climate
+        If left empty the global default from input_text.automated_alert_default_dashboard is used.
+        Create input_text.automated_alert_default_dashboard in the UI with your default dashboard URL.
+      default: ""
+      selector:
+        text:
+
 # ── Variables ─────────────────────────────────────────────────────────────────
-# Expose blueprint inputs as variables for use in templates
+# Only trigger_entity is used in the state/availability templates.
+# All other inputs are stored as static attributes.
 
 variables:
   trigger_entity: !input trigger_entity
+  tag: !input tag
   severity: !input severity
   title: !input title
   message: !input message
-  tag: !input tag
   acknowledged_helper: !input acknowledged_helper
+  image_path: !input image_path
+  dashboard_url: !input dashboard_url
 
 # ── Binary sensor definition ──────────────────────────────────────────────────
-# Name and unique_id are derived from the tag input to ensure consistent
-# entity IDs across all alert sensors.
+# Name and unique_id are derived from tag for consistent entity IDs.
+# Only trigger_entity is referenced in state/availability templates to
+# ensure reactive updates. All other values are static attributes.
 
 binary_sensor:
   name: "Alert {{ tag | replace('_', ' ') | title }}"
   unique_id: "alert_{{ tag }}"
   state: "{{ states(trigger_entity) == 'on' }}"
+  availability: "{{ states(trigger_entity) not in ('unknown', 'unavailable') }}"
   device_class: problem
   attributes:
     automated_alert: "{{ true }}"
@@ -149,3 +180,5 @@ binary_sensor:
     message: "{{ message }}"
     tag: "{{ tag }}"
     acknowledged_helper: "{{ acknowledged_helper }}"
+    image_path: "{{ image_path }}"
+    dashboard_url: "{{ dashboard_url }}"
