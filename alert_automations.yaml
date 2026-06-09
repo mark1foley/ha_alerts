@@ -9,106 +9,110 @@
 # alert binary sensors. Add new alert sensors to this group via the UI.
 ###############################################################################
 
+
 ###############################################################################
 # AUTOMATION 1: Alert Framework - State Change
 #
-# Triggered by binary_sensor.automated_alert_sensors group — fires when any
-# member changes state. trigger.to_state.attributes.entity_id | first gives
-# the specific member that changed. Attributes read via states[member_id].
-# Handles initial notification on activation and full clear on resolution.
+# Triggered by sensor.automated_alert_active_count. Uses queued mode so
+# every count change is processed sequentially. Loops through all recently
+# changed entities in the appropriate state. Uses status_helper to prevent
+# duplicate notifications — only notifies if status is idle.
 ###############################################################################
 
 - id: alert_framework_state_change
   alias: "Alert Framework: State Change"
   description: >
     Handles initial notification when an alert activates, and clears
-    notifications when an alert resolves. Triggered by state changes on
-    binary_sensor.automated_alert_sensors group — fires when any member
-    changes state. Reads metadata from the triggering member's attributes.
-  mode: parallel
-  max: 20
+    notifications when an alert resolves. Triggered by changes to
+    sensor.automated_alert_active_count. Loops through all recently changed
+    alert binary sensors in the appropriate state. Checks status_helper to
+    prevent duplicate notifications — only notifies if status is idle.
+  mode: queued
+  max: 10
 
   trigger:
     - platform: state
-      entity_id: binary_sensor.automated_alert_sensors
-      to: "on"
-      id: alert_on
-    - platform: state
-      entity_id: binary_sensor.automated_alert_sensors
-      to: "off"
-      id: alert_off
+      entity_id: sensor.automated_alert_active_count
+
+  condition:
+    - condition: template
+      value_template: >
+        {{ trigger.to_state.state not in ('unavailable', 'unknown') and
+           trigger.from_state.state not in ('unavailable', 'unknown') }}
 
   action:
     - variables:
-        member_id: "{{ trigger.to_state.attributes.entity_id | first }}"
+        count_increased: >-
+          {{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
+        member_ids: >-
+          {% if trigger.to_state.state | int(0) > trigger.from_state.state | int(0) %}
+            {{ expand('binary_sensor.automated_alert_sensors') |
+            selectattr('state', 'eq', 'on') | sort(attribute='last_changed',
+            reverse=True) | map(attribute='entity_id') | list }}
+          {% else %}
+            {{ expand('binary_sensor.automated_alert_sensors') |
+            selectattr('state', 'eq', 'off') | sort(attribute='last_changed',
+            reverse=True) | map(attribute='entity_id') | list }}
+          {% endif %}
 
-    - variables:
-        severity: "{{ state_attr(member_id, 'severity') }}"
-        title: "{{ state_attr(member_id, 'title') }}"
-        message: "{{ state_attr(member_id, 'message') }}"
-        tag: "{{ state_attr(member_id, 'tag') }}"
-        ack_helper: "{{ state_attr(member_id, 'acknowledged_helper') or '' }}"
-        image_path: "{{ state_attr(member_id, 'image_path') or '' }}"
-        dashboard_url: "{{ state_attr(member_id, 'dashboard_url') or '' }}"
+    - repeat:
+        for_each: "{{ member_ids }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ count_increased }}"
+            then:
+              # ── Alert activates ──────────────────────────────────────────
+              - variables:
+                  status_helper: "{{ state_attr(repeat.item, 'status_helper') or '' }}"
+                  is_idle: >-
+                    {% if status_helper != '' %}
+                      {{ is_state(status_helper, 'idle') }}
+                    {% else %}
+                      true
+                    {% endif %}
 
-    - choose:
+              # Only notify if status is idle (prevents duplicates)
+              - if:
+                  - condition: template
+                    value_template: "{{ is_idle }}"
+                then:
+                  - action: script.alert_notify
+                    data:
+                      severity: "{{ state_attr(repeat.item, 'severity') }}"
+                      title: "{{ state_attr(repeat.item, 'title') }}"
+                      message: "{{ state_attr(repeat.item, 'message') }}"
+                      tag: "{{ state_attr(repeat.item, 'tag') }}"
+                      status_helper: "{{ status_helper }}"
+                      image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
+                      dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
 
-        # ── Alert activates ────────────────────────────────────────────────────
-        - conditions:
-            - condition: trigger
-              id: alert_on
-          sequence:
-            - if:
-                - condition: template
-                  value_template: "{{ ack_helper != '' }}"
-              then:
-                - service: input_boolean.turn_off
-                  target:
-                    entity_id: "{{ ack_helper }}"
+            else:
+              # ── Alert resolves ───────────────────────────────────────────
+              - variables:
+                  status_helper: "{{ state_attr(repeat.item, 'status_helper') or '' }}"
 
-            - service: script.alert_notify
-              data:
-                severity: "{{ severity }}"
-                title: "{{ title }}"
-                message: "{{ message }}"
-                tag: "{{ tag }}"
-                image_path: "{{ image_path }}"
-                dashboard_url: "{{ dashboard_url }}"
-
-        # ── Alert resolves ─────────────────────────────────────────────────────
-        - conditions:
-            - condition: trigger
-              id: alert_off
-          sequence:
-            - if:
-                - condition: template
-                  value_template: "{{ ack_helper != '' }}"
-              then:
-                - service: input_boolean.turn_off
-                  target:
-                    entity_id: "{{ ack_helper }}"
-
-            - service: script.alert_clear
-              data:
-                tag: "{{ tag }}"
-                acknowledged: false
+              - action: script.alert_clear
+                data:
+                  tag: "{{ state_attr(repeat.item, 'tag') }}"
+                  acknowledged: false
+                  status_helper: "{{ status_helper }}"
 
 
 ###############################################################################
 # AUTOMATION 2: Alert Framework - Repeat
 #
-# Fires every 5 minutes. Re-notifies active unacknowledged major and critical
-# alert sensors. Major repeats every 15 min, critical every 5 min.
+# Fires every 5 minutes. Re-notifies active alerts where status is 'notified'
+# (not idle, not acknowledged). Major repeats every 15 min, critical every 5 min.
 ###############################################################################
 
 - id: alert_framework_repeat
   alias: "Alert Framework: Repeat"
   description: >
-    Fires every 5 minutes. Re-notifies all active, unacknowledged major and
-    critical alert sensors. Major alerts repeat every 15 min (on clock minutes
-    divisible by 15). Critical alerts repeat every 5 min.
-    Note: the gap between first and second notification may be less than the
-    full repeat interval depending on when in the cycle the alert activated.
+    Fires every 5 minutes. Re-notifies all active alert sensors where
+    status_helper is 'notified'. Acknowledged alerts are skipped.
+    Major alerts repeat every 15 min (on clock minutes divisible by 15).
+    Critical alerts repeat every 5 min.
   mode: single
   max_exceeded: silent
 
@@ -122,54 +126,43 @@
           {{ expand('binary_sensor.automated_alert_sensors')
               | selectattr('state', 'eq', 'on')
               | selectattr('attributes.severity', 'in', ['major', 'critical'])
+              | map(attribute='entity_id')
               | list }}
         sequence:
-          - variables:
-              alert: "{{ repeat.item }}"
-              severity: "{{ alert.attributes.severity }}"
-              ack_helper: "{{ alert.attributes.get('acknowledged_helper', '') }}"
-              is_acknowledged: >
-                {% if ack_helper != '' %}
-                  {{ is_state(ack_helper, 'on') }}
-                {% else %}
-                  false
-                {% endif %}
-              is_due: >
-                {% if severity == 'critical' %}
-                  true
-                {% elif severity == 'major' %}
-                  {{ now().minute % 15 == 0 }}
-                {% else %}
-                  false
-                {% endif %}
-
           - if:
               - condition: template
-                value_template: "{{ not is_acknowledged and is_due }}"
+                value_template: >
+                  {% set status_helper = state_attr(repeat.item, 'status_helper') or '' %}
+                  {% set status = states(status_helper) if status_helper != '' else 'idle' %}
+                  {% set severity = state_attr(repeat.item, 'severity') %}
+                  {{ status in ('notified', 'idle') and (
+                      severity == 'critical' or
+                      (severity == 'major' and now().minute % 15 == 0)
+                    ) }}
             then:
-              - service: script.alert_notify
+              - action: script.alert_notify
                 data:
-                  severity: "{{ severity }}"
-                  title: "{{ alert.attributes.title }}"
-                  message: "{{ alert.attributes.message }}"
-                  tag: "{{ alert.attributes.tag }}"
-                  image_path: "{{ alert.attributes.image_path or '' }}"
-                  dashboard_url: "{{ alert.attributes.dashboard_url or '' }}"
+                  severity: "{{ state_attr(repeat.item, 'severity') }}"
+                  title: "{{ state_attr(repeat.item, 'title') }}"
+                  message: "{{ state_attr(repeat.item, 'message') }}"
+                  tag: "{{ state_attr(repeat.item, 'tag') }}"
+                  status_helper: "{{ state_attr(repeat.item, 'status_helper') or '' }}"
+                  image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
+                  dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
 
 
 ###############################################################################
 # AUTOMATION 3: Alert Framework - Acknowledge
 #
-# Listens for mobile push action button presses. Matches to alert sensor
-# via tag, sets ack helper, clears mobile tray, stops repeats.
+# Listens for mobile push notification action button presses matching ACK_<TAG>.
+# Sets status_helper to acknowledged, clears mobile tray, stops repeats.
 ###############################################################################
 
 - id: alert_framework_acknowledge
   alias: "Alert Framework: Acknowledge"
   description: >
     Listens for mobile push notification action button presses matching ACK_<TAG>.
-    Sets the acknowledgement helper for the matching alert, clears the mobile
-    notification tray, and stops further repeats.
+    Sets status_helper to acknowledged, clears mobile tray, stops repeats.
   mode: parallel
   max: 20
 
@@ -196,52 +189,46 @@
         - condition: template
           value_template: "{{ matching_sensor != none }}"
       then:
-        - variables:
-            ack_helper: "{{ matching_sensor.attributes.get('acknowledged_helper', '') }}"
-
-        - if:
-            - condition: template
-              value_template: "{{ ack_helper != '' }}"
-          then:
-            - service: input_boolean.turn_on
-              target:
-                entity_id: "{{ ack_helper }}"
-
-        - service: script.alert_clear
+        - action: script.alert_clear
           data:
             tag: "{{ action_tag }}"
             acknowledged: true
+            status_helper: >-
+              {{ state_attr(
+                expand('binary_sensor.automated_alert_sensors')
+                | selectattr('attributes.tag', 'defined')
+                | selectattr('attributes.tag', 'eq', action_tag)
+                | map(attribute='entity_id') | list | first | default(''),
+                'status_helper') or '' }}
 
 
 ###############################################################################
-# AUTOMATION 5: Alert Framework - Badge Sync
+# AUTOMATION 4: Alert Framework - Badge Sync
 #
-# Silently updates the app badge count whenever any alert binary sensor
-# changes state. Uses sensor.automated_alerts_active_count as the badge
-# value — always accurate, self-correcting. Runs in queued mode to handle
-# rapid state changes. Also handles startup sync via homeassistant trigger.
+# Silently updates the app badge count whenever the active alert count changes
+# or on HA startup. Uses sensor.automated_alert_active_count as the badge
+# value. Runs in queued mode to handle rapid state changes.
 ###############################################################################
 
 - id: alert_framework_badge_sync
   alias: "Alert Framework: Badge Sync"
   description: >
-    Silently updates the app badge count when any alert binary sensor changes
-    state, and on HA startup. Always sets badge to the current active alert
-    count. If count is 0 the badge is cleared. Uses delete_alert message
-    which is silent on both iOS and Android.
+    Silently updates the app badge count when the active alert count changes
+    and on HA startup. Always sets badge to the current active alert count.
+    If count is 0 the badge is cleared. Uses delete_alert message which is
+    silent on both iOS and Android.
   mode: queued
   max: 10
 
   trigger:
     - platform: state
-      entity_id: binary_sensor.automated_alert_sensors
+      entity_id: sensor.automated_alert_active_count
       id: alert_state_change
     - platform: homeassistant
       event: start
       id: startup
 
   action:
-    # Delay to allow sensor.automated_alerts_active_count to settle
     - delay: >
         {% if trigger.id == 'startup' %}00:00:30{% else %}00:00:02{% endif %}
     - service: notify.minor_audience
@@ -249,4 +236,4 @@
         message: delete_alert
         data:
           push:
-            badge: "{{ states('sensor.automated_alerts_active_count') | int }}"
+            badge: "{{ states('sensor.automated_alert_active_count') | int }}"

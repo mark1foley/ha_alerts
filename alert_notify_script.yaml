@@ -4,7 +4,8 @@ script:
     description: >
       Central notification routing script for the alert framework.
       Routes to persistent notification, mobile push, and TTS based on severity.
-      Badge count is handled separately by the Alert Framework: Badge Sync automation.
+      Sets status_helper to 'notified' after sending notification.
+      Badge count is handled by the Alert Framework: Badge Sync automation.
       Called by alert automations - do not call directly from other automations.
     mode: parallel
     max: 20
@@ -29,9 +30,14 @@ script:
       tag:
         description: >
           Unique identifier for this alert (snake_case, e.g. garage_door_open).
-          Used to deduplicate and dismiss notifications. Must be stable across
-          repeat fires for the same alert.
+          Used to deduplicate and dismiss notifications.
         required: true
+        selector:
+          text:
+      status_helper:
+        description: "input_select entity ID for tracking alert status (optional)"
+        required: false
+        default: ""
         selector:
           text:
       image_path:
@@ -49,7 +55,7 @@ script:
         selector:
           text:
       tts_target:
-        description: "Optional media_player entity for TTS (critical alerts only by default)"
+        description: "Optional media_player entity for TTS. If provided, TTS announcement will be spoken when the alert activates."
         required: false
         selector:
           entity:
@@ -91,19 +97,28 @@ script:
                     {% if severity == 'critical' %}critical
                     {% elif severity == 'major' %}time-sensitive
                     {% else %}active{% endif %}
-                actions: >-
-                  {% if severity in ['major', 'critical'] %}
-                  [{"action": "ACK_{{ tag | upper }}", "title": "Acknowledge", "destructive": false}]
-                  {% else %}
-                  []
-                  {% endif %}
+                actions:
+                  - action: "ACK_{{ tag | upper }}"
+                    title: Acknowledge
+                    destructive: false
 
-      # ── 3. TTS (critical by default, or explicit tts_target supplied) ──────
+      # ── 3. TTS (only when tts_target explicitly provided) ─────────────────
       - if:
           - condition: template
-            value_template: "{{ severity == 'critical' or tts_target is defined }}"
+            value_template: "{{ tts_target is defined and tts_target != '' }}"
         then:
           - service: tts.speak
             data:
-              media_player_entity_id: "{{ tts_target | default('media_player.living_room') }}"
+              media_player_entity_id: "{{ tts_target }}"
               message: "Alert. {{ title }}. {{ message }}"
+
+      # ── 4. Set status_helper to notified ──────────────────────────────────
+      - if:
+          - condition: template
+            value_template: "{{ status_helper != '' }}"
+        then:
+          - service: input_select.select_option
+            target:
+              entity_id: "{{ status_helper }}"
+            data:
+              option: notified

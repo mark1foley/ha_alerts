@@ -12,27 +12,34 @@
 #       path: mark1foley/alert_binary_sensor_blueprint.yaml
 #       input:
 #         trigger_entity: cover.garage_door
+#         trigger_state: 'open'
 #         severity: major
 #         title: Garage Door Open
 #         message: The garage door has been open and no one is home
 #         tag: garage_door_open
-#         acknowledged_helper: input_boolean.alert_ack_garage_door_open
+#         status_helper: input_select.alert_status_garage_door_open
 #         dashboard_url: /lovelace/security
+#     unique_id: alert_garage_door_open
 #
 # After adding a new alert:
-#   1. Add use_blueprint entry to templates.yaml
-#   2. Add binary_sensor.alert_<tag> to binary_sensor.automated_alert_sensors group in UI
-#   3. Reload template entities (Developer Tools > YAML > Template entities)
-#   4. Restart HA if the blueprint file itself has changed
-#   5. Tag the binary sensor with the Alert label in the UI
+#   1. Create a Dropdown helper in the UI with options: idle, notified, acknowledged
+#      Naming convention: Alert Status <descriptive name>
+#      Entity ID will be: input_select.alert_status_<tag>
+#      (acknowledged is only needed for major and critical alerts)
+#   2. Add use_blueprint entry to templates.yaml with unique_id
+#   3. Add binary_sensor.alert_<tag> to binary_sensor.automated_alert_sensors group in UI
+#   4. Reload template entities (Developer Tools > YAML > Template entities)
+#   5. Restart HA if blueprint file has changed
+#   6. Tag the binary sensor with the Alert label in the UI
 #
 # Attributes produced on the binary sensor:
 #   automated_alert: true   (self-documenting flag)
+#   trigger_state:          The state that activates this alert
 #   severity:               info | minor | major | critical
 #   title:                  Short alert title
 #   message:                Full alert message
 #   tag:                    Unique snake_case identifier
-#   acknowledged_helper:    input_boolean entity ID or empty string
+#   status_helper:          input_select entity ID or empty string
 #   image_path:             Path to image file or empty string
 #   dashboard_url:          Lovelace URL or empty string (falls back to global default)
 #
@@ -43,6 +50,8 @@
 #
 # Framework constants referenced:
 #   input_text.automated_alert_default_dashboard  - global default dashboard URL
+#   binary_sensor.automated_alert_sensors         - group of all alert sensors
+#   sensor.automated_alert_active_count           - active alert count for badge
 # ─────────────────────────────────────────────────────────────────────────────
 
 blueprint:
@@ -59,11 +68,22 @@ blueprint:
       name: Trigger entity
       description: >
         The entity whose state determines whether this alert is active.
-        Must be an entity with an on/off state - binary sensor, input boolean etc.
-        For complex conditions (numeric thresholds, multiple entities), create a
-        template binary sensor first and reference it here.
+        Can be any entity with a stable state value - binary sensor, input boolean,
+        switch, cover etc. For complex conditions (numeric thresholds, multiple
+        entities), create a template binary sensor first and reference it here.
       selector:
         entity:
+
+    trigger_state:
+      name: Trigger state
+      description: >
+        The state of the trigger entity that means the alert is active.
+        Common values: on, off, open, unavailable, unlocked.
+        Note - use single quotes in templates.yaml to prevent YAML
+        interpreting on/off as booleans (e.g. trigger_state: 'on').
+      default: "on"
+      selector:
+        text:
 
     severity:
       name: Severity
@@ -72,7 +92,7 @@ blueprint:
         info - persistent notification only, no mobile push, no repeat.
         minor - mobile push (normal priority), no repeat.
         major - mobile push (time-sensitive), repeats every 15 min, acknowledgeable.
-        critical - mobile push (critical), TTS, repeats every 5 min, acknowledgeable.
+        critical - mobile push (critical), repeats every 5 min, acknowledgeable. TTS if tts_target specified.
       selector:
         select:
           options:
@@ -113,25 +133,29 @@ blueprint:
       selector:
         text:
 
-    acknowledged_helper:
-      name: Acknowledgement helper (optional)
+    status_helper:
+      name: Status helper (optional)
       description: >
-        An input_boolean helper to track acknowledgement state for this alert.
-        Required for major and critical alerts if acknowledgement is needed.
-        Create the helper in the UI first, then select it here.
-        Naming convention: input_boolean.alert_ack_<tag>
-        Leave empty for info and minor alerts.
+        A Dropdown (input_select) helper to track alert status.
+        Must have three options: idle, notified, acknowledged.
+        Create in UI: Settings > Helpers > Add Helper > Dropdown
+        Naming convention: Alert Status <descriptive name>
+        Entity ID convention: input_select.alert_status_<tag>
+        Recommended for all alerts. Required for major and critical.
+        Leave empty for info alerts only.
       default: ""
       selector:
         entity:
-          domain: input_boolean
+          domain: input_select
 
     image_path:
       name: Alert image path (optional)
       description: >
-        Full path to an image file to attach to the mobile notification.
-        The upstream process (camera automation, person detection etc.) is
-        responsible for capturing and storing the image before the alert fires.
+        Path to an image file to attach to the mobile notification.
+        The upstream process (camera automation etc.) is responsible for
+        capturing and storing the image before the alert fires.
+        Save to /config/www/alerts/<tag>.jpg
+        Reference as /local/alerts/<tag>.jpg
         Leave empty for text-only alerts.
       default: ""
       selector:
@@ -142,43 +166,48 @@ blueprint:
       description: >
         Lovelace dashboard to navigate to when the notification is tapped.
         e.g. /lovelace/security, /lovelace/climate
-        If left empty the global default from input_text.automated_alert_default_dashboard is used.
-        Create input_text.automated_alert_default_dashboard in the UI with your default dashboard URL.
+        If left empty the global default from
+        input_text.automated_alert_default_dashboard is used.
       default: ""
       selector:
         text:
 
 # ── Variables ─────────────────────────────────────────────────────────────────
-# Only trigger_entity is used in the state/availability templates.
-# All other inputs are stored as static attributes.
+# Only trigger_entity is used in the state/availability templates to ensure
+# reactive updates. All other inputs are stored as static attributes.
 
 variables:
   trigger_entity: !input trigger_entity
+  trigger_state: !input trigger_state
   tag: !input tag
   severity: !input severity
   title: !input title
   message: !input message
-  acknowledged_helper: !input acknowledged_helper
+  status_helper: !input status_helper
   image_path: !input image_path
   dashboard_url: !input dashboard_url
 
 # ── Binary sensor definition ──────────────────────────────────────────────────
-# Name and unique_id are derived from tag for consistent entity IDs.
-# Only trigger_entity is referenced in state/availability templates to
-# ensure reactive updates. All other values are static attributes.
+# Name is derived from tag for consistent entity IDs.
+# unique_id must be specified in the use_blueprint entry in templates.yaml.
 
 binary_sensor:
   name: "Alert {{ tag | replace('_', ' ') | title }}"
-  unique_id: "alert_{{ tag }}"
-  state: "{{ states(trigger_entity) == 'on' }}"
-  availability: "{{ states(trigger_entity) not in ('unknown', 'unavailable') }}"
+  state: "{{ states(trigger_entity) == trigger_state }}"
+  availability: >-
+    {% if trigger_state in ('unavailable', 'unknown') %}
+      true
+    {% else %}
+      {{ states(trigger_entity) not in ('unknown', 'unavailable') }}
+    {% endif %}
   device_class: problem
   attributes:
     automated_alert: "{{ true }}"
+    trigger_state: "{{ trigger_state }}"
     severity: "{{ severity }}"
     title: "{{ title }}"
     message: "{{ message }}"
     tag: "{{ tag }}"
-    acknowledged_helper: "{{ acknowledged_helper }}"
+    status_helper: "{{ status_helper }}"
     image_path: "{{ image_path }}"
     dashboard_url: "{{ dashboard_url }}"

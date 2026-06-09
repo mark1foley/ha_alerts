@@ -3,9 +3,8 @@ script:
     alias: "Alert: Clear"
     description: >
       Dismisses a named alert from all surfaces: persistent notification and
-      mobile tray (all audience groups).
-      Badge count is handled automatically by the Alert Framework: Badge Sync
-      automation which triggers on the group state change.
+      mobile tray (all audience groups). Updates status_helper accordingly.
+      Badge count is handled by the Alert Framework: Badge Sync automation.
       Called by alert automations and acknowledgement actions.
     mode: parallel
     max: 20
@@ -26,6 +25,12 @@ script:
         default: false
         selector:
           boolean:
+      status_helper:
+        description: "input_select entity ID for tracking alert status (optional)"
+        required: false
+        default: ""
+        selector:
+          text:
 
     sequence:
 
@@ -56,3 +61,15 @@ script:
           message: clear_notification
           data:
             tag: "alert_{{ tag }}"
+
+      # ── 3. Update status_helper ────────────────────────────────────────────
+      - if:
+          - condition: template
+            value_template: "{{ status_helper != '' }}"
+        then:
+          - service: input_select.select_option
+            target:
+              entity_id: "{{ status_helper }}"
+            data:
+              option: >-
+                {% if acknowledged %}acknowledged{% else %}idle{% endif %}
