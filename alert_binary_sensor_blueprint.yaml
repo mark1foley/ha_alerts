@@ -22,10 +22,10 @@
 #     unique_id: alert_garage_door_open
 #
 # After adding a new alert:
-#   1. Create a Dropdown helper in the UI with options: idle, notified, acknowledged
+#   1. Create a Dropdown helper in the UI with options: idle, skipped, notified, acknowledged
 #      Naming convention: Alert Status <descriptive name>
 #      Entity ID will be: input_select.alert_status_<tag>
-#      (acknowledged is only needed for major and critical alerts)
+#      (skipped and acknowledged only needed for alerts with skip_first or major/critical severity)
 #   2. Add use_blueprint entry to templates.yaml with unique_id
 #   3. Add binary_sensor.alert_<tag> to binary_sensor.automated_alert_sensors group in UI
 #   4. Reload template entities (Developer Tools > YAML > Template entities)
@@ -34,12 +34,14 @@
 #
 # Attributes produced on the binary sensor:
 #   automated_alert: true   (self-documenting flag)
+#   trigger_entity:         The entity driving this alert
 #   trigger_state:          The state that activates this alert
-#   severity:               info | minor | major | critical
+#   severity:               info | minor | action | major | critical
 #   title:                  Short alert title
 #   message:                Full alert message
 #   tag:                    Unique snake_case identifier
 #   status_helper:          input_select entity ID or empty string
+#   skip_first:             true | false - skip first notification, notify on first repeat
 #   image_path:             Path to image file or empty string
 #   dashboard_url:          Lovelace URL or empty string (falls back to global default)
 #
@@ -89,10 +91,13 @@ blueprint:
       name: Severity
       description: >
         Controls notification channels, interruption level, and repeat behaviour.
-        info - persistent notification only, no mobile push, no repeat.
-        minor - mobile push (normal priority), no repeat.
-        major - mobile push (time-sensitive), repeats every 15 min, acknowledgeable.
-        critical - mobile push (critical), repeats every 5 min, acknowledgeable. TTS if tts_target specified.
+        info   - persistent notification only, no mobile push, no repeat.
+        minor  - mobile push (normal priority), no repeat.
+        action - mobile push (normal priority), repeats every 60 min, acknowledgeable.
+                 Use for task reminders where no automatic resolution exists.
+        major  - mobile push (time-sensitive), repeats every 15 min, acknowledgeable.
+        critical - mobile push (critical), repeats every 5 min, acknowledgeable.
+                   TTS if tts_target specified.
       selector:
         select:
           options:
@@ -100,9 +105,11 @@ blueprint:
               value: info
             - label: "Minor - mobile push, no repeat"
               value: minor
+            - label: "Action - mobile push, repeats every 60 min, acknowledgeable"
+              value: action
             - label: "Major - mobile push, repeats every 15 min, acknowledgeable"
               value: major
-            - label: "Critical - mobile push, TTS, repeats every 5 min, acknowledgeable"
+            - label: "Critical - mobile push, repeats every 5 min, acknowledgeable"
               value: critical
 
     title:
@@ -137,16 +144,28 @@ blueprint:
       name: Status helper (optional)
       description: >
         A Dropdown (input_select) helper to track alert status.
-        Must have three options: idle, notified, acknowledged.
+        Must have four options: idle, skipped, notified, acknowledged.
         Create in UI: Settings > Helpers > Add Helper > Dropdown
         Naming convention: Alert Status <descriptive name>
         Entity ID convention: input_select.alert_status_<tag>
-        Recommended for all alerts. Required for major and critical.
+        Recommended for all alerts. Required for action, major and critical.
         Leave empty for info alerts only.
       default: ""
       selector:
         entity:
           domain: input_select
+
+    skip_first:
+      name: Skip first notification
+      description: >
+        If true, the first notification is skipped and the alert waits for the
+        first repeat interval before notifying. Useful for conditions that may
+        briefly activate and resolve without needing immediate notification.
+        Requires a status_helper with the skipped option.
+        Only applies to action, major and critical severities (repeating alerts).
+      default: false
+      selector:
+        boolean:
 
     image_path:
       name: Alert image path (optional)
@@ -184,6 +203,7 @@ variables:
   title: !input title
   message: !input message
   status_helper: !input status_helper
+  skip_first: !input skip_first
   image_path: !input image_path
   dashboard_url: !input dashboard_url
 
@@ -203,11 +223,13 @@ binary_sensor:
   device_class: problem
   attributes:
     automated_alert: "{{ true }}"
+    trigger_entity: "{{ trigger_entity }}"
     trigger_state: "{{ trigger_state }}"
     severity: "{{ severity }}"
     title: "{{ title }}"
     message: "{{ message }}"
     tag: "{{ tag }}"
     status_helper: "{{ status_helper }}"
+    skip_first: "{{ skip_first }}"
     image_path: "{{ image_path }}"
     dashboard_url: "{{ dashboard_url }}"

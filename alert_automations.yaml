@@ -65,6 +65,8 @@
               # ── Alert activates ──────────────────────────────────────────
               - variables:
                   status_helper: "{{ state_attr(repeat.item, 'status_helper') or '' }}"
+                  skip_first: "{{ state_attr(repeat.item, 'skip_first') or false }}"
+                  severity: "{{ state_attr(repeat.item, 'severity') or 'minor' }}"
                   is_idle: >-
                     {% if status_helper != '' %}
                       {{ is_state(status_helper, 'idle') }}
@@ -77,15 +79,27 @@
                   - condition: template
                     value_template: "{{ is_idle }}"
                 then:
-                  - action: script.alert_notify
-                    data:
-                      severity: "{{ state_attr(repeat.item, 'severity') }}"
-                      title: "{{ state_attr(repeat.item, 'title') }}"
-                      message: "{{ state_attr(repeat.item, 'message') }}"
-                      tag: "{{ state_attr(repeat.item, 'tag') }}"
-                      status_helper: "{{ status_helper }}"
-                      image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
-                      dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
+                  # If skip_first is true and severity repeats, set to skipped instead of notifying
+                  - if:
+                      - condition: template
+                        value_template: >-
+                          {{ skip_first and severity in ['action', 'major', 'critical'] and status_helper != '' }}
+                    then:
+                      - action: input_select.select_option
+                        target:
+                          entity_id: "{{ status_helper }}"
+                        data:
+                          option: skipped
+                    else:
+                      - action: script.alert_notify
+                        data:
+                          severity: "{{ severity }}"
+                          title: "{{ state_attr(repeat.item, 'title') }}"
+                          message: "{{ state_attr(repeat.item, 'message') }}"
+                          tag: "{{ state_attr(repeat.item, 'tag') }}"
+                          status_helper: "{{ status_helper }}"
+                          image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
+                          dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
 
             else:
               # ── Alert resolves ───────────────────────────────────────────
@@ -110,9 +124,11 @@
   alias: "Alert Framework: Repeat"
   description: >
     Fires every 5 minutes. Re-notifies all active alert sensors where
-    status_helper is 'notified'. Acknowledged alerts are skipped.
+    status_helper is 'notified', 'idle', or 'skipped'. Acknowledged alerts
+    are skipped. Action alerts repeat every 60 min (on the hour).
     Major alerts repeat every 15 min (on clock minutes divisible by 15).
     Critical alerts repeat every 5 min.
+    Skipped alerts (skip_first=true) are notified on their first repeat cycle.
   mode: single
   max_exceeded: silent
 
@@ -125,7 +141,7 @@
         for_each: >
           {{ expand('binary_sensor.automated_alert_sensors')
               | selectattr('state', 'eq', 'on')
-              | selectattr('attributes.severity', 'in', ['major', 'critical'])
+              | selectattr('attributes.severity', 'in', ['action', 'major', 'critical'])
               | map(attribute='entity_id')
               | list }}
         sequence:
@@ -135,9 +151,10 @@
                   {% set status_helper = state_attr(repeat.item, 'status_helper') or '' %}
                   {% set status = states(status_helper) if status_helper != '' else 'idle' %}
                   {% set severity = state_attr(repeat.item, 'severity') %}
-                  {{ status in ('notified', 'idle') and (
+                  {{ status in ('notified', 'idle', 'skipped') and (
                       severity == 'critical' or
-                      (severity == 'major' and now().minute % 15 == 0)
+                      (severity == 'major' and now().minute % 15 == 0) or
+                      (severity == 'action' and now().minute == 0)
                     ) }}
             then:
               - action: script.alert_notify

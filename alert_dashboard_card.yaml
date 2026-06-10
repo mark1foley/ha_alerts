@@ -1,0 +1,153 @@
+# Active Alerts Dashboard Card - Standalone Example
+# ─────────────────────────────────────────────────────────────────────────────
+# Prerequisites:
+#   - custom:auto-entities (HACS)
+#   - custom:button-card (HACS)
+#
+# Features:
+#   - Expands binary_sensor.automated_alert_sensors group
+#   - Filters to active (on) alerts only
+#   - Severity-based colour coding (critical=red, major=orange, action=yellow, minor=amber, info=green)
+#   - Shows alert name and current status (notified/skipped/acknowledged)
+#   - Tap to mark Done (turns off trigger_entity - intended for action severity)
+#   - Hold to Acknowledge (calls script.alert_clear with acknowledged: true)
+#
+# Note: Tap-to-done fires for all severities in this example.
+# A production implementation with custom button-card templates can restrict
+# by severity and show/hide buttons based on status.
+# ─────────────────────────────────────────────────────────────────────────────
+
+type: custom:auto-entities
+card:
+  type: grid
+  title: Active Alerts
+  columns: 1
+  square: false
+card_param: cards
+filter:
+  include:
+    - group: binary_sensor.automated_alert_sensors
+      state: "on"
+      options:
+        type: custom:button-card
+        entity: this.entity_id
+        show_name: true
+        show_state: false
+        label: >-
+          [[[  var helper = entity.attributes.status_helper; if (!helper ||
+          helper === '') return 'notified'; var s = states[helper] ?
+          states[helper].state : ''; return ['idle', 'notified',
+          'acknowledged', 'skipped'].includes(s) ? s.charAt(0).toUpperCase() + s.slice(1) :
+          'Notified'; ]]]
+        show_label: true
+        layout: icon_name
+        styles:
+          card:
+            - border-radius: 12px
+            - padding: 12px 16px
+            - margin: 4px 0
+            - box-shadow: none
+          grid:
+            - grid-template-areas: "'i n' 'i l'"
+            - grid-template-columns: 48px 1fr
+            - grid-template-rows: auto auto
+          icon:
+            - width: 32px
+            - height: 32px
+          name:
+            - font-weight: "600"
+            - font-size: 14px
+            - text-align: left
+            - justify-self: start
+            - align-self: end
+          label:
+            - font-size: 12px
+            - text-align: left
+            - color: "#757575"
+            - text-transform: capitalize
+            - justify-self: start
+            - align-self: start
+        state:
+          - value: "on"
+            styles:
+              card:
+                - background: |
+                    [[[
+                      var sev = entity.attributes.severity;
+                      if (sev === 'critical') return '#FFEBEE';
+                      if (sev === 'major') return '#FFF3E0';
+                      if (sev === 'action') return '#FFFDE7';
+                      if (sev === 'minor') return '#FFF8E1';
+                      return '#F1F8E9';
+                    ]]]
+                - border-left: |
+                    [[[
+                      var sev = entity.attributes.severity;
+                      if (sev === 'critical') return '4px solid #D32F2F';
+                      if (sev === 'major') return '4px solid #E65100';
+                      if (sev === 'action') return '4px solid #F9A825';
+                      if (sev === 'minor') return '4px solid #F9A825';
+                      return '4px solid #558B2F';
+                    ]]]
+              icon:
+                - color: |
+                    [[[
+                      var sev = entity.attributes.severity;
+                      if (sev === 'critical') return '#D32F2F';
+                      if (sev === 'major') return '#E65100';
+                      if (sev === 'action') return '#F9A825';
+                      if (sev === 'minor') return '#F9A825';
+                      return '#558B2F';
+                    ]]]
+              name:
+                - color: |
+                    [[[
+                      var sev = entity.attributes.severity;
+                      if (sev === 'critical') return '#B71C1C';
+                      if (sev === 'major') return '#BF360C';
+                      if (sev === 'action') return '#F57F17';
+                      if (sev === 'minor') return '#F57F17';
+                      return '#33691E';
+                    ]]]
+              label:
+                - color: |
+                    [[[
+                      var sev = entity.attributes.severity;
+                      if (sev === 'critical') return '#B71C1C';
+                      if (sev === 'major') return '#BF360C';
+                      if (sev === 'action') return '#F57F17';
+                      if (sev === 'minor') return '#F57F17';
+                      return '#33691E';
+                    ]]]
+        tap_action:
+          action: call-service
+          service: input_boolean.turn_off
+          service_data:
+            entity_id: "[[[ return entity.attributes.trigger_entity ]]]"
+        hold_action:
+          action: call-service
+          service: script.alert_clear
+          service_data:
+            tag: "[[[ return entity.attributes.tag ]]]"
+            acknowledged: true
+            status_helper: "[[[ return entity.attributes.status_helper ]]]"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Action Severity - Done Button Example
+# ─────────────────────────────────────────────────────────────────────────────
+# For action severity alerts, add a "Done" button that turns off the trigger
+# entity (input_boolean). This marks the task as complete.
+# Add this to the button-card options alongside the tap_action above,
+# using hold_action or a custom_fields button per your preference.
+#
+# Example using hold_action for Done (tap = acknowledge, hold = done):
+#
+#        hold_action:
+#          action: call-service
+#          service: input_boolean.turn_off
+#          service_data:
+#            entity_id: "[[[ return entity.attributes.trigger_entity ]]]"
+#
+# Note: Only works for action severity alerts where trigger_entity is an
+# input_boolean. For other trigger entity types adjust the service call.
+# ─────────────────────────────────────────────────────────────────────────────

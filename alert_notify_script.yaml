@@ -73,7 +73,7 @@ script:
       # ── 2. Mobile push (minor, major, critical) ────────────────────────────
       - if:
           - condition: template
-            value_template: "{{ severity in ['minor', 'major', 'critical'] }}"
+            value_template: "{{ severity in ['minor', 'action', 'major', 'critical'] }}"
         then:
           - service: "notify.{{ severity }}_audience"
             data:
