@@ -35,6 +35,9 @@
       entity_id: sensor.automated_alert_active_count
 
   condition:
+    - condition: state
+      entity_id: input_boolean.automated_alert_startup_complete
+      state: "on"
     - condition: template
       value_template: >
         {{ trigger.to_state.state not in ('unavailable', 'unknown') and
@@ -135,6 +138,11 @@
   trigger:
     - platform: time_pattern
       minutes: "/5"
+
+  condition:
+    - condition: state
+      entity_id: input_boolean.automated_alert_startup_complete
+      state: "on"
 
   action:
     - repeat:
@@ -248,6 +256,93 @@
   action:
     - delay: >
         {% if trigger.id == 'startup' %}00:00:30{% else %}00:00:02{% endif %}
+    - service: notify.minor_audience
+      data:
+        message: delete_alert
+        data:
+          push:
+            badge: "{{ states('sensor.automated_alert_active_count') | int }}"
+
+###############################################################################
+# AUTOMATION 5: Alert Framework - Startup
+#
+# Fires 60 seconds after HA starts. Two purposes:
+# 1. Prevents false alert notifications during startup by waiting for all
+#    integrations to load before the state change automation begins processing.
+# 2. Re-notifies any alerts that were already active before the restart,
+#    ensuring no active alerts are silently missed after a restart.
+#
+# Note: The state change automation should have a condition checking
+# input_boolean.automated_alert_startup_complete is 'on' to prevent
+# false alerts during the 60 second startup window. Create this helper
+# in the UI (Settings > Helpers > Add Helper > Toggle).
+###############################################################################
+
+- id: alert_framework_startup
+  alias: "Alert Framework: Startup"
+  description: >
+    Waits 60 seconds after HA starts to allow all integrations to load,
+    then re-notifies any alerts already active before the restart.
+    Also sets input_boolean.automated_alert_startup_complete to on,
+    enabling the state change automation to begin processing.
+  mode: single
+
+  trigger:
+    - platform: homeassistant
+      event: start
+
+  action:
+    - delay: "00:01:00"
+
+    # Enable state change automation processing
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.automated_alert_startup_complete
+
+    # Re-notify any alerts already active
+    - repeat:
+        for_each: >
+          {{ expand('binary_sensor.automated_alert_sensors')
+              | selectattr('state', 'eq', 'on')
+              | map(attribute='entity_id') | list }}
+        sequence:
+          - variables:
+              status_helper: "{{ state_attr(repeat.item, 'status_helper') or '' }}"
+
+          - action: script.alert_notify
+            data:
+              severity: "{{ state_attr(repeat.item, 'severity') }}"
+              title: "{{ state_attr(repeat.item, 'title') }}"
+              message: "{{ state_attr(repeat.item, 'message') }}"
+              tag: "{{ state_attr(repeat.item, 'tag') }}"
+              status_helper: "{{ status_helper }}"
+              image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
+              dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
+
+
+###############################################################################
+# AUTOMATION 6: Alert Framework - Periodic Badge Sync
+#
+# Fires every 10 minutes to resync the app badge count. iOS clears the badge
+# count when the app is opened, so this ensures it stays accurate even when
+# no alert state changes occur. Uses the same silent delete_alert approach
+# as the badge sync automation.
+###############################################################################
+
+- id: alert_framework_periodic_badge_sync
+  alias: "Alert Framework: Periodic Badge Sync"
+  description: >
+    Resyncs the app badge count every 10 minutes. iOS clears the badge when
+    the app is opened — this ensures it reflects the true active alert count
+    even if no alerts have changed state recently.
+  mode: single
+  max_exceeded: silent
+
+  trigger:
+    - platform: time_pattern
+      minutes: "/10"
+
+  action:
     - service: notify.minor_audience
       data:
         message: delete_alert
