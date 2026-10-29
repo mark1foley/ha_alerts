@@ -4,18 +4,19 @@ script:
     description: >
       Central notification routing script for the alert framework.
       Routes to persistent notification, mobile push, and TTS based on severity.
-      Sets status_helper to 'notified' after sending notification.
+      Sets status_helper to 'notified' after sending notification (except security
+      which resets to idle to allow retriggering).
       Badge count is handled by the Alert Framework: Badge Sync automation.
       Called by alert automations - do not call directly from other automations.
     mode: parallel
     max: 20
     fields:
       severity:
-        description: "Alert severity level: info | minor | major | critical"
+        description: "Alert severity level: info | minor | action | major | security | critical"
         required: true
         selector:
           select:
-            options: [info, minor, major, critical]
+            options: [info, minor, action, major, security, critical]
       title:
         description: "Short alert title (shown as notification heading)"
         required: true
@@ -55,7 +56,7 @@ script:
         selector:
           text:
       tts_target:
-        description: "Optional media_player entity for TTS. If provided, TTS announcement will be spoken when the alert activates."
+        description: "Optional media_player entity for TTS. Always used for security severity."
         required: false
         selector:
           entity:
@@ -63,38 +64,42 @@ script:
 
     sequence:
 
-      # ── 1. Persistent notification (all severities) ────────────────────────
-      - service: persistent_notification.create
-        data:
-          title: "[{{ severity | upper }}] {{ title }}"
-          message: "{{ message }}"
-          notification_id: "alert_{{ tag }}"
-
-      # ── 2. Mobile push (minor, major, critical) ────────────────────────────
+      # ── 1. Persistent notification (all severities except security) ────────
       - if:
           - condition: template
-            value_template: "{{ severity in ['minor', 'action', 'major', 'critical'] }}"
+            value_template: "{{ severity != 'security' }}"
         then:
-          - service: "notify.{{ severity }}_audience"
+          - service: persistent_notification.create
+            data:
+              title: "[{{ severity | upper }}] {{ title }}"
+              message: "{{ message }}"
+              notification_id: "alert_{{ tag }}"
+
+      # ── 2. Mobile push (minor, action, major, security, critical) ──────────
+      - if:
+          - condition: template
+            value_template: "{{ severity in ['minor', 'action', 'major', 'security', 'critical'] }}"
+        then:
+          - service: >-
+              {% if severity == 'security' %}notify.security_audience
+              {% else %}notify.{{ severity }}_audience{% endif %}
             data:
               title: "[{{ severity | upper }}] {{ title }}"
               message: "{{ message }}"
               data:
                 tag: "alert_{{ tag }}"
                 channel: "{{ severity }}"
-                # Navigate to per-alert dashboard or global default on notification tap
                 url: >-
                   {% if dashboard_url != '' %}
                     {{ dashboard_url }}
                   {% else %}
                     {{ states('input_text.automated_alert_default_dashboard') }}
                   {% endif %}
-                # Attach image if provided
                 image: >-
                   {% if image_path != '' %}{{ image_path }}{% endif %}
                 push:
                   interruption-level: >-
-                    {% if severity == 'critical' %}critical
+                    {% if severity in ['critical', 'security'] %}critical
                     {% elif severity == 'major' %}time-sensitive
                     {% else %}active{% endif %}
                 actions:
@@ -102,17 +107,19 @@ script:
                     title: Acknowledge
                     destructive: false
 
-      # ── 3. TTS (only when tts_target explicitly provided) ─────────────────
+      # ── 3. TTS (security always, others only when tts_target provided) ─────
       - if:
           - condition: template
-            value_template: "{{ tts_target is defined and tts_target != '' }}"
+            value_template: "{{ severity == 'security' or (tts_target is defined and tts_target != '') }}"
         then:
           - service: tts.speak
             data:
-              media_player_entity_id: "{{ tts_target }}"
-              message: "Alert. {{ title }}. {{ message }}"
+              media_player_entity_id: "{{ tts_target | default('media_player.living_room') }}"
+              message: "{{ title }}. {{ message }}"
 
-      # ── 4. Set status_helper to notified ──────────────────────────────────
+      # ── 4. Set status_helper ───────────────────────────────────────────────
+      # Security: reset to idle (ready to retrigger immediately)
+      # All others: set to notified
       - if:
           - condition: template
             value_template: "{{ status_helper != '' }}"
@@ -121,4 +128,5 @@ script:
             target:
               entity_id: "{{ status_helper }}"
             data:
-              option: notified
+              option: >-
+                {% if severity == 'security' %}idle{% else %}notified{% endif %}

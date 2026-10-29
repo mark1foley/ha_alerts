@@ -82,27 +82,62 @@
                   - condition: template
                     value_template: "{{ is_idle }}"
                 then:
-                  # If skip_first is true and severity repeats, set to skipped instead of notifying
+                  # Check suppressor before notifying
+                  - variables:
+                      is_home: >-
+                        {% if states('binary_sensor.automated_alert_home') not in ('unknown', 'unavailable') %}
+                          {{ is_state('binary_sensor.automated_alert_home', 'on') }}
+                        {% else %}
+                          true
+                        {% endif %}
+                      is_suppressed: >-
+                        {{ is_home and
+                           is_state('input_boolean.automated_alert_suppressor', 'on') and
+                           state_attr(repeat.item, 'is_suppressible') == true }}
+                      not_home_severity: "{{ state_attr(repeat.item, 'not_home_severity') or '' }}"
+                      effective_severity: >-
+                        {% if not is_home and not_home_severity != '' %}
+                          {{ not_home_severity }}
+                        {% else %}
+                          {{ severity }}
+                        {% endif %}
+
+                  # If suppressed, set status to suppressed and stop here
                   - if:
                       - condition: template
-                        value_template: >-
-                          {{ skip_first and severity in ['action', 'major', 'critical'] and status_helper != '' }}
+                        value_template: "{{ is_suppressed and status_helper != '' }}"
                     then:
                       - action: input_select.select_option
                         target:
                           entity_id: "{{ status_helper }}"
                         data:
-                          option: skipped
+                          option: suppressed
                     else:
-                      - action: script.alert_notify
-                        data:
-                          severity: "{{ severity }}"
-                          title: "{{ state_attr(repeat.item, 'title') }}"
-                          message: "{{ state_attr(repeat.item, 'message') }}"
-                          tag: "{{ state_attr(repeat.item, 'tag') }}"
-                          status_helper: "{{ status_helper }}"
-                          image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
-                          dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
+                      # If skip_first is true and effective severity repeats, set to skipped instead of notifying
+                      - if:
+                          - condition: template
+                            value_template: >-
+                              {{ not is_suppressed and skip_first and effective_severity in ['action', 'major', 'critical'] and status_helper != '' }}
+                        then:
+                          - action: input_select.select_option
+                            target:
+                              entity_id: "{{ status_helper }}"
+                            data:
+                              option: skipped
+                        else:
+                          - if:
+                              - condition: template
+                                value_template: "{{ not is_suppressed }}"
+                            then:
+                              - action: script.alert_notify
+                                data:
+                                  severity: "{{ effective_severity }}"
+                                  title: "{{ state_attr(repeat.item, 'title') }}"
+                                  message: "{{ state_attr(repeat.item, 'message') }}"
+                                  tag: "{{ state_attr(repeat.item, 'tag') }}"
+                                  status_helper: "{{ status_helper }}"
+                                  image_path: "{{ state_attr(repeat.item, 'image_path') or '' }}"
+                                  dashboard_url: "{{ state_attr(repeat.item, 'dashboard_url') or '' }}"
 
             else:
               # ── Alert resolves ───────────────────────────────────────────
@@ -114,6 +149,7 @@
                   tag: "{{ state_attr(repeat.item, 'tag') }}"
                   acknowledged: false
                   status_helper: "{{ status_helper }}"
+                  severity: "{{ state_attr(repeat.item, 'severity') or '' }}"
 
 
 ###############################################################################
@@ -126,18 +162,26 @@
 - id: alert_framework_repeat
   alias: "Alert Framework: Repeat"
   description: >
-    Fires every 5 minutes. Re-notifies all active alert sensors where
-    status_helper is 'notified', 'idle', or 'skipped'. Acknowledged alerts
-    are skipped. Action alerts repeat every 60 min (on the hour).
-    Major alerts repeat every 15 min (on clock minutes divisible by 15).
-    Critical alerts repeat every 5 min.
-    Skipped alerts (skip_first=true) are notified on their first repeat cycle.
+    Fires every 5 minutes and on binary_sensor.automated_alert_home state change.
+    Covers minor, action, major, security and critical active alerts.
+    For minor and security: only notifies when recovering from suppressed state
+    or when home state changes (effective severity may change via not_home_severity).
+    For action/major/critical: re-notifies on their respective intervals.
+    Also handles setting status to suppressed when suppressor is active, and
+    notifying when suppression lifts for any severity.
+    On home state change, immediately re-evaluates all active alerts so
+    not_home_severity upgrades/downgrades take effect without waiting for
+    the next 5-minute cycle.
   mode: single
   max_exceeded: silent
 
   trigger:
     - platform: time_pattern
       minutes: "/5"
+      id: time_trigger
+    - platform: state
+      entity_id: binary_sensor.automated_alert_home
+      id: home_changed
 
   condition:
     - condition: state
@@ -149,25 +193,53 @@
         for_each: >
           {{ expand('binary_sensor.automated_alert_sensors')
               | selectattr('state', 'eq', 'on')
-              | selectattr('attributes.severity', 'in', ['action', 'major', 'critical'])
+              | selectattr('attributes.severity', 'in', ['minor', 'action', 'major', 'security', 'critical'])
               | map(attribute='entity_id')
               | list }}
         sequence:
+          # Step 1: if currently not suppressed but status is suppressed, update to suppressed
+          # or if currently suppressed but status isn't suppressed yet, set it
+          - if:
+              - condition: template
+                value_template: >
+                  {% set status_helper = state_attr(repeat.item, 'status_helper') or '' %}
+                  {% set is_home = true if states('binary_sensor.automated_alert_home') in ('unknown', 'unavailable') else is_state('binary_sensor.automated_alert_home', 'on') %}
+                  {% set is_suppressed = is_home and is_state('input_boolean.automated_alert_suppressor', 'on') and state_attr(repeat.item, 'is_suppressible') == true %}
+                  {{ is_suppressed and status_helper != '' and not is_state(status_helper, 'suppressed') }}
+            then:
+              - action: input_select.select_option
+                target:
+                  entity_id: "{{ state_attr(repeat.item, 'status_helper') }}"
+                data:
+                  option: suppressed
+
+          # Step 2: send notification if conditions are met
           - if:
               - condition: template
                 value_template: >
                   {% set status_helper = state_attr(repeat.item, 'status_helper') or '' %}
                   {% set status = states(status_helper) if status_helper != '' else 'idle' %}
                   {% set severity = state_attr(repeat.item, 'severity') %}
-                  {{ status in ('notified', 'idle', 'skipped') and (
-                      severity == 'critical' or
-                      (severity == 'major' and now().minute % 15 == 0) or
-                      (severity == 'action' and now().minute == 0)
+                  {% set not_home_severity = state_attr(repeat.item, 'not_home_severity') or '' %}
+                  {% set is_home = true if states('binary_sensor.automated_alert_home') in ('unknown', 'unavailable') else is_state('binary_sensor.automated_alert_home', 'on') %}
+                  {% set effective_severity = not_home_severity if (not is_home and not_home_severity != '') else severity %}
+                  {% set is_suppressed = is_home and is_state('input_boolean.automated_alert_suppressor', 'on') and state_attr(repeat.item, 'is_suppressible') == true %}
+                  {{ not is_suppressed and (
+                      (status == 'suppressed') or
+                      (status in ('notified', 'idle', 'skipped') and (
+                          effective_severity == 'critical' or
+                          (effective_severity == 'major' and now().minute % 15 == 0) or
+                          (effective_severity == 'action' and now().minute == 0) or
+                          (trigger.id == 'home_changed' and not_home_severity != '' and status in ('notified', 'idle', 'skipped'))
+                      ))
                     ) }}
             then:
               - action: script.alert_notify
                 data:
-                  severity: "{{ state_attr(repeat.item, 'severity') }}"
+                  severity: >-
+                    {% set not_home_severity = state_attr(repeat.item, 'not_home_severity') or '' %}
+                    {% set is_home = true if states('binary_sensor.automated_alert_home') in ('unknown', 'unavailable') else is_state('binary_sensor.automated_alert_home', 'on') %}
+                    {{ not_home_severity if (not is_home and not_home_severity != '') else state_attr(repeat.item, 'severity') }}
                   title: "{{ state_attr(repeat.item, 'title') }}"
                   message: "{{ state_attr(repeat.item, 'message') }}"
                   tag: "{{ state_attr(repeat.item, 'tag') }}"
@@ -218,6 +290,13 @@
           data:
             tag: "{{ action_tag }}"
             acknowledged: true
+            severity: >-
+              {{ state_attr(
+                expand('binary_sensor.automated_alert_sensors')
+                | selectattr('attributes.tag', 'defined')
+                | selectattr('attributes.tag', 'eq', action_tag)
+                | map(attribute='entity_id') | list | first | default(''),
+                'severity') or '' }}
             status_helper: >-
               {{ state_attr(
                 expand('binary_sensor.automated_alert_sensors')
@@ -281,10 +360,11 @@
 - id: alert_framework_startup
   alias: "Alert Framework: Startup"
   description: >
-    Waits 60 seconds after HA starts to allow all integrations to load,
-    then re-notifies any alerts already active before the restart.
-    Also sets input_boolean.automated_alert_startup_complete to on,
-    enabling the state change automation to begin processing.
+    Turns off input_boolean.automated_alert_startup_complete immediately on
+    restart, closing the processing window. Waits 2 minutes to allow all
+    integrations to load, then re-notifies any alerts already active before
+    the restart and turns input_boolean.automated_alert_startup_complete back
+    on, enabling the state change and repeat automations to begin processing.
   mode: single
 
   trigger:
@@ -292,9 +372,15 @@
       event: start
 
   action:
-    - delay: "00:01:00"
+    # Close the processing window immediately - input_booleans restore their
+    # previous state across restarts, so this must run before the delay
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.automated_alert_startup_complete
 
-    # Enable state change automation processing
+    - delay: "00:02:00"
+
+    # Re-open the processing window
     - service: input_boolean.turn_on
       target:
         entity_id: input_boolean.automated_alert_startup_complete

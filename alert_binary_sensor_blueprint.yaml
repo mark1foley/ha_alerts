@@ -22,10 +22,10 @@
 #     unique_id: alert_garage_door_open
 #
 # After adding a new alert:
-#   1. Create a Dropdown helper in the UI with options: idle, skipped, notified, acknowledged
+#   1. Create a Dropdown helper in the UI with options: idle, skipped, suppressed, notified, acknowledged
 #      Naming convention: Alert Status <descriptive name>
 #      Entity ID will be: input_select.alert_status_<tag>
-#      (skipped and acknowledged only needed for alerts with skip_first or major/critical severity)
+#      (skipped, suppressed and acknowledged only needed for alerts with skip_first, is_suppressible, or major/critical severity)
 #   2. Add use_blueprint entry to templates.yaml with unique_id
 #   3. Add binary_sensor.alert_<tag> to binary_sensor.automated_alert_sensors group in UI
 #   4. Reload template entities (Developer Tools > YAML > Template entities)
@@ -42,6 +42,8 @@
 #   tag:                    Unique snake_case identifier
 #   status_helper:          input_select entity ID or empty string
 #   skip_first:             true | false - skip first notification, notify on first repeat
+#   not_home_severity:      optional severity override when binary_sensor.automated_alert_home is off
+#   is_suppressible:        true | false - can be suppressed by silencer (default true)
 #   image_path:             Path to image file or empty string
 #   dashboard_url:          Lovelace URL or empty string (falls back to global default)
 #
@@ -96,6 +98,10 @@ blueprint:
         action - mobile push (normal priority), repeats every 60 min, acknowledgeable.
                  Use for task reminders where no automatic resolution exists.
         major  - mobile push (time-sensitive), repeats every 15 min, acknowledgeable.
+        security - mobile push (critical), TTS, no repeat, no badge, no persistent notification.
+                   Use for security events (motion, door/window) while away. Trigger entity
+                   must be an input_boolean controlled by an upstream automation.
+                   Done mechanism turns off trigger_entity. Ack resets to idle (ready to retrigger).
         critical - mobile push (critical), repeats every 5 min, acknowledgeable.
                    TTS if tts_target specified.
       selector:
@@ -109,6 +115,8 @@ blueprint:
               value: action
             - label: "Major - mobile push, repeats every 15 min, acknowledgeable"
               value: major
+            - label: "Security - mobile push (critical), TTS, no repeat, no badge, no persistent notification"
+              value: security
             - label: "Critical - mobile push, repeats every 5 min, acknowledgeable"
               value: critical
 
@@ -144,7 +152,7 @@ blueprint:
       name: Status helper (optional)
       description: >
         A Dropdown (input_select) helper to track alert status.
-        Must have four options: idle, skipped, notified, acknowledged.
+        Must have five options: idle, skipped, suppressed, notified, acknowledged.
         Create in UI: Settings > Helpers > Add Helper > Dropdown
         Naming convention: Alert Status <descriptive name>
         Entity ID convention: input_select.alert_status_<tag>
@@ -164,6 +172,53 @@ blueprint:
         Requires a status_helper with the skipped option.
         Only applies to action, major and critical severities (repeating alerts).
       default: false
+      selector:
+        boolean:
+
+    not_home_severity:
+      name: Not home severity (optional)
+      description: >
+        If set, overrides the severity level when binary_sensor.automated_alert_home
+        is 'off' (no one home). Allows the same alert to behave differently based
+        on presence — e.g. severity: minor when home, not_home_severity: major
+        when away. Leave empty to use the same severity regardless of presence.
+        Works alongside is_suppressible — a severity upgrade when away will
+        bypass suppression since suppression requires is_home=true.
+      default: ""
+      selector:
+        select:
+          options:
+            - label: "— not set (use severity regardless of presence) —"
+              value: ""
+            - label: "Info - persistent notification only"
+              value: info
+            - label: "Minor - mobile push, no repeat"
+              value: minor
+            - label: "Action - mobile push, repeats every 60 min, acknowledgeable"
+              value: action
+            - label: "Major - mobile push, repeats every 15 min, acknowledgeable"
+              value: major
+            - label: "Security - mobile push (critical), TTS, no repeat, no badge"
+              value: security
+            - label: "Critical - mobile push, repeats every 5 min, acknowledgeable"
+              value: critical
+
+    is_suppressible:
+      name: Suppressible
+      description: >
+        If true, this alert can be suppressed by the silencer.
+        Suppression occurs when binary_sensor.automated_alert_home is 'on'
+        AND input_boolean.automated_alert_suppressor is 'on'.
+        This applies regardless of severity — including major and critical.
+        Set to false for alerts that should always notify regardless of
+        suppressor state (e.g. smoke, flood). Set to true for alerts that
+        are only relevant when no one is home, even if critical
+        (e.g. person detected by camera, door/window opened).
+        This lets you suppress security alerts while a trusted person
+        is in the house, while still being notified of safety issues
+        like flooding.
+        Defaults to true — set to false only for alerts that must always fire.
+      default: true
       selector:
         boolean:
 
@@ -204,6 +259,8 @@ variables:
   message: !input message
   status_helper: !input status_helper
   skip_first: !input skip_first
+  not_home_severity: !input not_home_severity
+  is_suppressible: !input is_suppressible
   image_path: !input image_path
   dashboard_url: !input dashboard_url
 
@@ -226,10 +283,12 @@ binary_sensor:
     trigger_entity: "{{ trigger_entity }}"
     trigger_state: "{{ trigger_state }}"
     severity: "{{ severity }}"
+    not_home_severity: "{{ not_home_severity }}"
+    is_suppressible: "{{ is_suppressible }}"
+    skip_first: "{{ skip_first }}"
     title: "{{ title }}"
     message: "{{ message }}"
     tag: "{{ tag }}"
     status_helper: "{{ status_helper }}"
-    skip_first: "{{ skip_first }}"
     image_path: "{{ image_path }}"
     dashboard_url: "{{ dashboard_url }}"

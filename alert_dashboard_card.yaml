@@ -8,7 +8,8 @@
 #   - Expands binary_sensor.automated_alert_sensors group
 #   - Filters to active (on) alerts only
 #   - Severity-based colour coding (critical=red, major=orange, action=yellow, minor=amber, info=green)
-#   - Shows alert name and current status (notified/skipped/acknowledged)
+#   - Shows alert title and message
+#   - Shows current status (notified/skipped/acknowledged/suppressed) top-right
 #   - Tap to mark Done (turns off trigger_entity - intended for action severity)
 #   - Hold to Acknowledge (calls script.alert_clear with acknowledged: true)
 #
@@ -31,16 +32,19 @@ filter:
       options:
         type: custom:button-card
         entity: this.entity_id
+        name: "[[[ return entity.attributes.title ]]]"
         show_name: true
         show_state: false
-        label: >-
-          [[[  var helper = entity.attributes.status_helper; if (!helper ||
-          helper === '') return 'notified'; var s = states[helper] ?
-          states[helper].state : ''; return ['idle', 'notified',
-          'acknowledged', 'skipped'].includes(s) ? s.charAt(0).toUpperCase() + s.slice(1) :
-          'Notified'; ]]]
+        label: "[[[ return entity.attributes.message ]]]"
         show_label: true
         layout: icon_name
+        custom_fields:
+          status: >-
+            [[[  var helper = entity.attributes.status_helper; if (!helper ||
+            helper === '') return 'Notified'; var s = states[helper] ?
+            states[helper].state : ''; return ['idle', 'notified',
+            'acknowledged', 'skipped', 'suppressed'].includes(s) ? s.charAt(0).toUpperCase() + s.slice(1) :
+            'Notified'; ]]]
         styles:
           card:
             - border-radius: 12px
@@ -48,8 +52,8 @@ filter:
             - margin: 4px 0
             - box-shadow: none
           grid:
-            - grid-template-areas: "'i n' 'i l'"
-            - grid-template-columns: 48px 1fr
+            - grid-template-areas: "'i n status' 'i l status'"
+            - grid-template-columns: 48px 1fr auto
             - grid-template-rows: auto auto
           icon:
             - width: 32px
@@ -64,9 +68,18 @@ filter:
             - font-size: 12px
             - text-align: left
             - color: "#757575"
-            - text-transform: capitalize
             - justify-self: start
             - align-self: start
+          custom_fields:
+            status:
+              - font-size: 11px
+              - text-transform: uppercase
+              - letter-spacing: "0.5px"
+              - color: "#9E9E9E"
+              - justify-self: end
+              - align-self: start
+              - padding-left: 8px
+              - white-space: nowrap
         state:
           - value: "on"
             styles:
@@ -74,7 +87,8 @@ filter:
                 - background: |
                     [[[
                       var sev = entity.attributes.severity;
-                      if (sev === 'critical') return '#FFEBEE';
+                      if (sev === 'critical') return '#F3E5F5';
+                      if (sev === 'security') return '#E8EAF6';
                       if (sev === 'major') return '#FFF3E0';
                       if (sev === 'action') return '#FFFDE7';
                       if (sev === 'minor') return '#FFF8E1';
@@ -83,7 +97,8 @@ filter:
                 - border-left: |
                     [[[
                       var sev = entity.attributes.severity;
-                      if (sev === 'critical') return '4px solid #D32F2F';
+                      if (sev === 'critical') return '4px solid #6A1B9A';
+                      if (sev === 'security') return '4px solid #1A237E';
                       if (sev === 'major') return '4px solid #E65100';
                       if (sev === 'action') return '4px solid #F9A825';
                       if (sev === 'minor') return '4px solid #F9A825';
@@ -93,7 +108,8 @@ filter:
                 - color: |
                     [[[
                       var sev = entity.attributes.severity;
-                      if (sev === 'critical') return '#D32F2F';
+                      if (sev === 'critical') return '#6A1B9A';
+                      if (sev === 'security') return '#1A237E';
                       if (sev === 'major') return '#E65100';
                       if (sev === 'action') return '#F9A825';
                       if (sev === 'minor') return '#F9A825';
@@ -103,7 +119,8 @@ filter:
                 - color: |
                     [[[
                       var sev = entity.attributes.severity;
-                      if (sev === 'critical') return '#B71C1C';
+                      if (sev === 'critical') return '#4A148C';
+                      if (sev === 'security') return '#0D1B8E';
                       if (sev === 'major') return '#BF360C';
                       if (sev === 'action') return '#F57F17';
                       if (sev === 'minor') return '#F57F17';
@@ -113,7 +130,8 @@ filter:
                 - color: |
                     [[[
                       var sev = entity.attributes.severity;
-                      if (sev === 'critical') return '#B71C1C';
+                      if (sev === 'critical') return '#4A148C';
+                      if (sev === 'security') return '#0D1B8E';
                       if (sev === 'major') return '#BF360C';
                       if (sev === 'action') return '#F57F17';
                       if (sev === 'minor') return '#F57F17';
@@ -130,6 +148,7 @@ filter:
           service_data:
             tag: "[[[ return entity.attributes.tag ]]]"
             acknowledged: true
+            severity: "[[[ return entity.attributes.severity ]]]"
             status_helper: "[[[ return entity.attributes.status_helper ]]]"
 
 # ─────────────────────────────────────────────────────────────────────────────

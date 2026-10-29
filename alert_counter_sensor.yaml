@@ -12,6 +12,7 @@ template:
         state: >
           {{ expand('binary_sensor.automated_alert_sensors')
               | selectattr('state', 'eq', 'on')
+              | rejectattr('attributes.severity', 'eq', 'security')
               | list
               | count }}
         unit_of_measurement: alerts

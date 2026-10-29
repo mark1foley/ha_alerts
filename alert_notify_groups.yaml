@@ -14,17 +14,27 @@
 #   critical_audience — critical alerts only
 ###############################################################################
 
-- platform: group
-  name: minor_audience
-  services:
-    - action: mobile_app_mafone
+  - platform: group
+    name: minor_audience
+    services:
+      - action: mobile_app_mafone
 
-- platform: group
-  name: major_audience
-  services:
-    - action: mobile_app_mafone
+  - platform: group
+    name: major_audience
+    services:
+      - action: mobile_app_mafone
 
-- platform: group
-  name: critical_audience
-  services:
-    - action: mobile_app_mafone
+  - platform: group
+    name: action_audience
+    services:
+      - action: mobile_app_mafone
+
+  - platform: group
+    name: security_audience
+    services:
+      - action: mobile_app_mafone
+
+  - platform: group
+    name: critical_audience
+    services:
+      - action: mobile_app_mafone

@@ -6,6 +6,8 @@ script:
       mobile tray (all audience groups). Updates status_helper accordingly.
       Badge count is handled by the Alert Framework: Badge Sync automation.
       Called by alert automations and acknowledgement actions.
+      Security severity: no persistent notification to dismiss.
+      Security acknowledge: resets status to idle (ready to retrigger).
     mode: parallel
     max: 20
     fields:
@@ -31,13 +33,21 @@ script:
         default: ""
         selector:
           text:
+      severity:
+        description: "Alert severity — used to skip persistent notification dismiss for security alerts"
+        required: false
+        default: ""
+        selector:
+          text:
 
     sequence:
 
-      # ── 1. Dismiss persistent notification (condition resolved only) ────────
+      # ── 1. Dismiss persistent notification ────────────────────────────────
+      # Skip if acknowledged (keep persistent until resolved)
+      # Skip if security severity (no persistent notification was created)
       - if:
           - condition: template
-            value_template: "{{ not acknowledged }}"
+            value_template: "{{ not acknowledged and severity != 'security' }}"
         then:
           - service: persistent_notification.dismiss
             data:
@@ -56,6 +66,12 @@ script:
           data:
             tag: "alert_{{ tag }}"
 
+      - service: notify.security_audience
+        data:
+          message: clear_notification
+          data:
+            tag: "alert_{{ tag }}"
+
       - service: notify.critical_audience
         data:
           message: clear_notification
@@ -63,6 +79,8 @@ script:
             tag: "alert_{{ tag }}"
 
       # ── 3. Update status_helper ────────────────────────────────────────────
+      # Security acknowledge: reset to idle (ready to retrigger immediately)
+      # All others: acknowledged or idle based on acknowledged flag
       - if:
           - condition: template
             value_template: "{{ status_helper != '' }}"
@@ -72,4 +90,6 @@ script:
               entity_id: "{{ status_helper }}"
             data:
               option: >-
-                {% if acknowledged %}acknowledged{% else %}idle{% endif %}
+                {% if severity == 'security' %}idle
+                {% elif acknowledged %}acknowledged
+                {% else %}idle{% endif %}
