@@ -1,6 +1,6 @@
 # input_selects_alerts.yaml
 # ─────────────────────────────────────────────────────────────────────────────
-# Alert framework status helpers for low battery alerts.
+# Alert framework status helpers.
 #
 # Include in configuration.yaml:
 #   input_select: !include input_selects_alerts.yaml
