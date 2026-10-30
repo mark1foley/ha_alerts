@@ -16,16 +16,17 @@ Work through the steps in order and tick off the checks at the end of each.
 
 ## Files in this package
 
-| File                                                      | Goes to                                    |
-| --------------------------------------------------------- | ------------------------------------------ |
-| `alert_binary_sensor_blueprint.yaml`                    | `config/blueprints/template/mark1foley/` |
-| `alert_counter_sensor.yaml`                             | merge into your `template:` config       |
-| `alert_notify_groups.yaml`                              | `config/alert_notify_groups.yaml`        |
-| `alert_notify_script.yaml`, `alert_clear_script.yaml` | append to `scripts.yaml`                 |
-| `alert_automations.yaml`                                | merge into `automations.yaml`            |
-| `input_selects_alerts.yaml`                             | example status helpers (`input_select:`) |
-| `low_battery_alerts.yaml`, `templates_example.yaml`   | examples of alert entries                  |
-| `alert_dashboard_card.yaml`                             | dashboard card (step 12)                   |
+| File | Goes to |
+|---|---|
+| `alert_binary_sensor_blueprint.yaml` | `config/blueprints/template/mark1foley/` |
+| `alert_counter_sensor.yaml` | optional YAML alternative to the step 5 helper (has the icon template) |
+| `alert_notify_groups.yaml` | `config/alert_notify_groups.yaml` |
+| `alert_notify_script.yaml`, `alert_clear_script.yaml` | append to `scripts.yaml` |
+| `alert_automations.yaml` | merge into `automations.yaml` |
+| `input_selects_alerts.yaml` | example status helpers (`input_select:`) |
+| `binary-sensor-blueprint_alerts.yaml` | your alert entries, in `config/template-sensors/` |
+| `low_battery_alerts.yaml` | example alert entries (low battery) |
+| `alert_dashboard_card.yaml` | dashboard card (step 12) |
 
 The blueprint folder name `mark1foley` must match the `path:` used in every `use_blueprint` entry.
 
@@ -48,12 +49,12 @@ HA only picks up a new or changed blueprint file after a full restart; step 8 co
 
 Settings → Devices & services → Helpers → Create helper. Entity IDs must match exactly:
 
-| Type                         | Name                              | Resulting entity ID                                |
-| ---------------------------- | --------------------------------- | -------------------------------------------------- |
-| Toggle                       | Automated Alert Startup Complete  | `input_boolean.automated_alert_startup_complete` |
-| Toggle                       | Automated Alert Suppressor        | `input_boolean.automated_alert_suppressor`       |
-| Text                         | Automated Alert Default Dashboard | `input_text.automated_alert_default_dashboard`   |
-| Group → Binary sensor group | Automated Alert Sensors           | `binary_sensor.automated_alert_sensors`          |
+| Type | Name | Resulting entity ID |
+|---|---|---|
+| Toggle | Automated Alert Startup Complete | `input_boolean.automated_alert_startup_complete` |
+| Toggle | Automated Alert Suppressor | `input_boolean.automated_alert_suppressor` |
+| Text | Automated Alert Default Dashboard | `input_text.automated_alert_default_dashboard` |
+| Group → Binary sensor group | Automated Alert Sensors | `binary_sensor.automated_alert_sensors` |
 
 - Suppressor: **on** = alerts flagged `is_suppressible` are held back while someone is home.
 - Default dashboard: a path such as `/lovelace/alerts`, used when an alert sets no `dashboard_url`.
@@ -113,6 +114,7 @@ Counts active alerts (excluding security). It triggers the State Change automati
        | list
        | count }}
    ```
+
 4. Leave unit of measurement, device class and state class blank (the form only offers a fixed list
    of units, and the framework doesn't use one), then Submit.
 5. Optional: open the entity's settings and set an icon (for example `mdi:shield-alert`).
@@ -120,8 +122,7 @@ Counts active alerts (excluding security). It triggers the State Change automati
    count (`mdi:shield-check` at 0, and so on) isn't available this way. It is cosmetic only; the
    framework doesn't use it. The `template:` YAML in `alert_counter_sensor.yaml` still has it if you want it.
 
-**Check:** the sensor reads 0. It reads 0 (not an error) while the group is empty.
-**(unverified)** I have not tested `expand()` on an empty group in the helper form.
+**Check:** the sensor reads 0 (verified on an empty group).
 
 ### Organise: assign a category
 
@@ -182,15 +183,70 @@ Every alert except `info` needs a Dropdown helper with these options **in this o
 
 `idle, skipped, suppressed, notified, actioned, acknowledged`
 
-Entity ID convention: `input_select.alert_status_<tag>`. For many alerts, define them in YAML:
-`input_select: !include input_selects_alerts.yaml` (see the file for the format; it needs a full restart, so add the include and the file **before step 8** to keep it to a single restart. Helpers created in the UI need no restart).
+Entity ID convention: `input_select.alert_status_<tag>`. Two ways to create them:
+
+**YAML (best for many alerts).** Download the template file, add one entry per alert, and include it:
+
+```
+curl -fsSL -o /config/input_selects_alerts.yaml \
+  https://raw.githubusercontent.com/mark1foley/ha_alerts/main/input_selects_alerts.yaml
+```
+
+Entries look like this:
+
+```yaml
+alert_status_garage_door_open:
+  name: Alert Status Garage Door Open
+  options: [idle, skipped, suppressed, notified, actioned, acknowledged]
+  icon: mdi:alert
+```
+
+Add this line to `configuration.yaml` (if you already have an `input_select:` section, merge the
+entries into your existing file instead). HA accepts the template file with every entry still commented out:
+
+```
+input_select: !include input_selects_alerts.yaml
+```
+
+Adding or changing entries in this file needs a **full restart**, so for a first install add the file,
+your entries and the include **before step 8** to keep it to a single restart.
+
+**UI (best for one or two).** Settings → Helpers → Create helper → Dropdown, with the options above in that
+order and the name `Alert Status <description>`. No restart needed.
 
 > The status helper is effectively **mandatory for all non-info alerts**. Without one, the alert
 > can re-notify on every change in the active count. A guard for this is planned but not yet implemented.
 
 ## Step 10 – Add each alert
 
-For each alert add a `use_blueprint` entry to your `templates.yaml` (see `templates_example.yaml`):
+Alert sensors are defined as template entities in YAML. The recommended layout is a folder with one
+file per kind of template, so the alerts stay separate from your other template sensors.
+
+If your configuration doesn't already load template YAML, create the folder and add this line to
+`configuration.yaml`:
+
+```
+mkdir -p /config/template-sensors
+```
+
+```
+template: !include_dir_merge_list template-sensors/
+```
+
+Download the template file from the repo into that folder, as in step 9, and add your alerts to it:
+
+```
+curl -fsSL -o /config/template-sensors/binary-sensor-blueprint_alerts.yaml \
+  https://raw.githubusercontent.com/mark1foley/ha_alerts/main/binary-sensor-blueprint_alerts.yaml
+```
+
+Each file in the folder must be a YAML list, and this one is just a list of `use_blueprint` entries with no
+`template:` key of its own. If you already use `template:` with a different include (a single
+`templates.yaml`, say), keep it and put the entries there instead.
+**(unverified)** If this is the first time `template:` appears in `configuration.yaml`, do it before the
+step 8 restart rather than relying on a reload.
+
+For each alert add a `use_blueprint` entry to `binary-sensor-blueprint_alerts.yaml`:
 
 ```yaml
 - use_blueprint:
@@ -207,7 +263,6 @@ For each alert add a `use_blueprint` entry to your `templates.yaml` (see `templa
 ```
 
 Rules:
-
 - `unique_id` goes on the `use_blueprint` entry (not inside `input`), convention `alert_<tag>`.
 - The entity ID becomes `binary_sensor.alert_<tag>` and must be unique.
 - Then add `binary_sensor.alert_<tag>` to the `binary_sensor.automated_alert_sensors` group
