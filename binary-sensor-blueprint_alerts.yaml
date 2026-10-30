@@ -1,0 +1,30 @@
+###############################################################################
+# binary-sensor-blueprint_alerts.yaml (extract)
+#
+# Alert binary sensors are defined here using the alert_binary_sensor blueprint.
+# Each entry creates one binary sensor with a consistent attribute schema.
+#
+# IMPORTANT: unique_id must be specified in each use_blueprint entry.
+# Use the convention: alert_<tag>
+#
+# See https://github.com/mark1foley/ha_alerts/blob/main/INSTALL.md for 
+# instructions on installing the framework and creating alerts.
+#
+###############################################################################
+#
+# Example
+#
+#- use_blueprint:
+#    path: mark1foley/alert_binary_sensor_blueprint.yaml
+#    input:
+#      trigger_entity: input_boolean.alert_garage_door_open
+#      trigger_state: 'on'
+#      severity: major
+#      title: Garage Door Open
+#      message: The garage door has been open and no one is home
+#      tag: garage_door_open
+#      status_helper: input_select.alert_status_garage_door_open
+#      image_path: /local/alerts/garage_door_open.jpg
+#      dashboard_url: /lovelace/security
+#  unique_id: alert_garage_door_open
+
