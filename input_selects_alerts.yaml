@@ -1,0 +1,19 @@
+# input_selects_alerts.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Alert framework status helpers for low battery alerts.
+#
+# Include in configuration.yaml:
+#   input_select: !include input_selects_alerts.yaml
+#
+# If you already have input_select: entries in configuration.yaml, merge
+# these entries into your existing file instead.
+#
+# Requires a full HA restart after adding.
+# ─────────────────────────────────────────────────────────────────────────────$
+#
+# Example:
+#
+#alert_status_garage_door_open:
+#  name: Alert Status Garage Door Open
+#  options: [idle, skipped, suppressed, notified, actioned, acknowledged]
+#  icon: mdi:alert
