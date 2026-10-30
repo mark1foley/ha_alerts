@@ -1,150 +1,149 @@
-script:
-  alert_notify:
-    alias: "Alert: Notify"
-    description: >
-      Central notification routing script for the alert framework.
-      Routes to persistent notification, mobile push, and TTS based on severity.
-      Sets status_helper to 'notified' after sending notification (except security
-      which resets to idle to allow retriggering).
-      If action_1_title is set, shows custom action buttons instead of Acknowledge.
-      Badge count is handled by the Alert Framework: Badge Sync automation.
-      Called by alert automations - do not call directly from other automations.
-    mode: parallel
-    max: 20
-    fields:
-      severity:
-        description: "Alert severity level: info | minor | action | major | security | critical"
-        required: true
-        selector:
-          select:
-            options: [info, minor, action, major, security, critical]
-      title:
-        description: "Short alert title (shown as notification heading)"
-        required: true
-        selector:
-          text:
-      message:
-        description: "Full alert message body"
-        required: true
-        selector:
-          text:
-            multiline: true
-      tag:
-        description: >
-          Unique identifier for this alert (snake_case, e.g. garage_door_open).
-          Used to deduplicate and dismiss notifications.
-        required: true
-        selector:
-          text:
-      status_helper:
-        description: "input_select entity ID for tracking alert status (optional)"
-        required: false
-        default: ""
-        selector:
-          text:
-      image_path:
-        description: "Optional path to image file to attach to mobile notification"
-        required: false
-        default: ""
-        selector:
-          text:
-      dashboard_url:
-        description: >
-          Optional Lovelace dashboard URL to navigate to when notification is tapped.
-          Falls back to input_text.automated_alert_default_dashboard if empty.
-        required: false
-        default: ""
-        selector:
-          text:
-      tts_target:
-        description: "Optional media_player entity for TTS. Always used for security severity."
-        required: false
-        selector:
-          entity:
-            domain: media_player
-      action_1_title:
-        description: "Optional first custom action button title (replaces Acknowledge when set)"
-        required: false
-        default: ""
-        selector:
-          text:
-      action_2_title:
-        description: "Optional second custom action button title"
-        required: false
-        default: ""
-        selector:
-          text:
+alert_notify:
+  alias: "Alert: Notify"
+  description: >
+    Central notification routing script for the alert framework.
+    Routes to persistent notification, mobile push, and TTS based on severity.
+    Sets status_helper to 'notified' after sending notification (except security
+    which resets to idle to allow retriggering).
+    If action_1_title is set, shows custom action buttons instead of Acknowledge.
+    Badge count is handled by the Alert Framework: Badge Sync automation.
+    Called by alert automations - do not call directly from other automations.
+  mode: parallel
+  max: 20
+  fields:
+    severity:
+      description: "Alert severity level: info | minor | action | major | security | critical"
+      required: true
+      selector:
+        select:
+          options: [info, minor, action, major, security, critical]
+    title:
+      description: "Short alert title (shown as notification heading)"
+      required: true
+      selector:
+        text:
+    message:
+      description: "Full alert message body"
+      required: true
+      selector:
+        text:
+          multiline: true
+    tag:
+      description: >
+        Unique identifier for this alert (snake_case, e.g. garage_door_open).
+        Used to deduplicate and dismiss notifications.
+      required: true
+      selector:
+        text:
+    status_helper:
+      description: "input_select entity ID for tracking alert status (optional)"
+      required: false
+      default: ""
+      selector:
+        text:
+    image_path:
+      description: "Optional path to image file to attach to mobile notification"
+      required: false
+      default: ""
+      selector:
+        text:
+    dashboard_url:
+      description: >
+        Optional Lovelace dashboard URL to navigate to when notification is tapped.
+        Falls back to input_text.automated_alert_default_dashboard if empty.
+      required: false
+      default: ""
+      selector:
+        text:
+    tts_target:
+      description: "Optional media_player entity for TTS. Always used for security severity."
+      required: false
+      selector:
+        entity:
+          domain: media_player
+    action_1_title:
+      description: "Optional first custom action button title (replaces Acknowledge when set)"
+      required: false
+      default: ""
+      selector:
+        text:
+    action_2_title:
+      description: "Optional second custom action button title"
+      required: false
+      default: ""
+      selector:
+        text:
 
-    sequence:
+  sequence:
 
-      # ── 1. Persistent notification (all severities except security) ────────
-      - if:
-          - condition: template
-            value_template: "{{ severity != 'security' }}"
-        then:
-          - service: persistent_notification.create
+    # ── 1. Persistent notification (all severities except security) ────────
+    - if:
+        - condition: template
+          value_template: "{{ severity != 'security' }}"
+      then:
+        - service: persistent_notification.create
+          data:
+            title: "[{{ severity | upper }}] {{ title }}"
+            message: "{{ message }}"
+            notification_id: "alert_{{ tag }}"
+
+    # ── 2. Mobile push (minor, action, major, security, critical) ──────────
+    - if:
+        - condition: template
+          value_template: "{{ severity in ['minor', 'action', 'major', 'security', 'critical'] }}"
+      then:
+        - service: >-
+            {% if severity == 'security' %}notify.security_audience
+            {% else %}notify.{{ severity }}_audience{% endif %}
+          data:
+            title: "[{{ severity | upper }}] {{ title }}"
+            message: "{{ message }}"
             data:
-              title: "[{{ severity | upper }}] {{ title }}"
-              message: "{{ message }}"
-              notification_id: "alert_{{ tag }}"
+              tag: "alert_{{ tag }}"
+              channel: "{{ severity }}"
+              url: >-
+                {% if dashboard_url != '' %}
+                  {{ dashboard_url }}
+                {% else %}
+                  {{ states('input_text.automated_alert_default_dashboard') }}
+                {% endif %}
+              image: >-
+                {% if image_path != '' %}{{ image_path }}{% endif %}
+              push:
+                interruption-level: >-
+                  {% if severity in ['critical', 'security'] %}critical
+                  {% elif severity == 'major' %}time-sensitive
+                  {% else %}active{% endif %}
+              actions: >-
+                {% if action_1_title is defined and action_1_title != '' %}
+                  [{"action": "ACTION1_{{ tag | upper }}", "title": "{{ action_1_title }}", "destructive": false}
+                  {%- if action_2_title is defined and action_2_title != '' %},
+                  {"action": "ACTION2_{{ tag | upper }}", "title": "{{ action_2_title }}", "destructive": false}
+                  {%- endif %}]
+                {% else %}
+                  [{"action": "ACK_{{ tag | upper }}", "title": "Acknowledge", "destructive": false}]
+                {% endif %}
 
-      # ── 2. Mobile push (minor, action, major, security, critical) ──────────
-      - if:
-          - condition: template
-            value_template: "{{ severity in ['minor', 'action', 'major', 'security', 'critical'] }}"
-        then:
-          - service: >-
-              {% if severity == 'security' %}notify.security_audience
-              {% else %}notify.{{ severity }}_audience{% endif %}
-            data:
-              title: "[{{ severity | upper }}] {{ title }}"
-              message: "{{ message }}"
-              data:
-                tag: "alert_{{ tag }}"
-                channel: "{{ severity }}"
-                url: >-
-                  {% if dashboard_url != '' %}
-                    {{ dashboard_url }}
-                  {% else %}
-                    {{ states('input_text.automated_alert_default_dashboard') }}
-                  {% endif %}
-                image: >-
-                  {% if image_path != '' %}{{ image_path }}{% endif %}
-                push:
-                  interruption-level: >-
-                    {% if severity in ['critical', 'security'] %}critical
-                    {% elif severity == 'major' %}time-sensitive
-                    {% else %}active{% endif %}
-                actions: >-
-                  {% if action_1_title is defined and action_1_title != '' %}
-                    [{"action": "ACTION1_{{ tag | upper }}", "title": "{{ action_1_title }}", "destructive": false}
-                    {%- if action_2_title is defined and action_2_title != '' %},
-                    {"action": "ACTION2_{{ tag | upper }}", "title": "{{ action_2_title }}", "destructive": false}
-                    {%- endif %}]
-                  {% else %}
-                    [{"action": "ACK_{{ tag | upper }}", "title": "Acknowledge", "destructive": false}]
-                  {% endif %}
+    # ── 3. TTS (security always, others only when tts_target provided) ─────
+    - if:
+        - condition: template
+          value_template: "{{ severity == 'security' or (tts_target is defined and tts_target != '') }}"
+      then:
+        - service: tts.speak
+          data:
+            media_player_entity_id: "{{ tts_target | default('media_player.living_room') }}"
+            message: "{{ title }}. {{ message }}"
 
-      # ── 3. TTS (security always, others only when tts_target provided) ─────
-      - if:
-          - condition: template
-            value_template: "{{ severity == 'security' or (tts_target is defined and tts_target != '') }}"
-        then:
-          - service: tts.speak
-            data:
-              media_player_entity_id: "{{ tts_target | default('media_player.living_room') }}"
-              message: "{{ title }}. {{ message }}"
-
-      # ── 4. Set status_helper ───────────────────────────────────────────────
-      # Security: reset to idle (ready to retrigger immediately)
-      # All others: set to notified
-      - if:
-          - condition: template
-            value_template: "{{ status_helper != '' }}"
-        then:
-          - service: input_select.select_option
-            target:
-              entity_id: "{{ status_helper }}"
-            data:
-              option: >-
-                {% if severity == 'security' %}idle{% else %}notified{% endif %}
+    # ── 4. Set status_helper ───────────────────────────────────────────────
+    # Security: reset to idle (ready to retrigger immediately)
+    # All others: set to notified
+    - if:
+        - condition: template
+          value_template: "{{ status_helper != '' }}"
+      then:
+        - service: input_select.select_option
+          target:
+            entity_id: "{{ status_helper }}"
+          data:
+            option: >-
+              {% if severity == 'security' %}idle{% else %}notified{% endif %}

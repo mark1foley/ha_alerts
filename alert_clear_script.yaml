@@ -1,95 +1,94 @@
-script:
-  alert_clear:
-    alias: "Alert: Clear"
-    description: >
-      Dismisses a named alert from all surfaces: persistent notification and
-      mobile tray (all audience groups). Updates status_helper accordingly.
-      Badge count is handled by the Alert Framework: Badge Sync automation.
-      Called by alert automations and acknowledgement actions.
-      Security severity: no persistent notification to dismiss.
-      Security acknowledge: resets status to idle (ready to retrigger).
-    mode: parallel
-    max: 20
-    fields:
-      tag:
-        description: >
-          Unique identifier of the alert to clear (must match the tag used
-          in the corresponding alert_notify call).
-        required: true
-        selector:
-          text:
-      acknowledged:
-        description: >
-          Set to true when called from an acknowledgement action (clears mobile
-          tray and stops repeats, but keeps the persistent notification).
-          Set to false (default) when called on condition resolution (full clear).
-        required: false
-        default: false
-        selector:
-          boolean:
-      status_helper:
-        description: "input_select entity ID for tracking alert status (optional)"
-        required: false
-        default: ""
-        selector:
-          text:
-      severity:
-        description: "Alert severity — used to skip persistent notification dismiss for security alerts"
-        required: false
-        default: ""
-        selector:
-          text:
+alert_clear:
+  alias: "Alert: Clear"
+  description: >
+    Dismisses a named alert from all surfaces: persistent notification and
+    mobile tray (all audience groups). Updates status_helper accordingly.
+    Badge count is handled by the Alert Framework: Badge Sync automation.
+    Called by alert automations and acknowledgement actions.
+    Security severity: no persistent notification to dismiss.
+    Security acknowledge: resets status to idle (ready to retrigger).
+  mode: parallel
+  max: 20
+  fields:
+    tag:
+      description: >
+        Unique identifier of the alert to clear (must match the tag used
+        in the corresponding alert_notify call).
+      required: true
+      selector:
+        text:
+    acknowledged:
+      description: >
+        Set to true when called from an acknowledgement action (clears mobile
+        tray and stops repeats, but keeps the persistent notification).
+        Set to false (default) when called on condition resolution (full clear).
+      required: false
+      default: false
+      selector:
+        boolean:
+    status_helper:
+      description: "input_select entity ID for tracking alert status (optional)"
+      required: false
+      default: ""
+      selector:
+        text:
+    severity:
+      description: "Alert severity — used to skip persistent notification dismiss for security alerts"
+      required: false
+      default: ""
+      selector:
+        text:
 
-    sequence:
+  sequence:
 
-      # ── 1. Dismiss persistent notification ────────────────────────────────
-      # Skip if acknowledged (keep persistent until resolved)
-      # Skip if security severity (no persistent notification was created)
-      - if:
-          - condition: template
-            value_template: "{{ not acknowledged and severity != 'security' }}"
-        then:
-          - service: persistent_notification.dismiss
-            data:
-              notification_id: "alert_{{ tag }}"
-
-      # ── 2. Clear mobile tray on all audience groups ────────────────────────
-      - service: notify.minor_audience
-        data:
-          message: clear_notification
+    # ── 1. Dismiss persistent notification ────────────────────────────────
+    # Skip if acknowledged (keep persistent until resolved)
+    # Skip if security severity (no persistent notification was created)
+    - if:
+        - condition: template
+          value_template: "{{ not acknowledged and severity != 'security' }}"
+      then:
+        - service: persistent_notification.dismiss
           data:
-            tag: "alert_{{ tag }}"
+            notification_id: "alert_{{ tag }}"
 
-      - service: notify.major_audience
+    # ── 2. Clear mobile tray on all audience groups ────────────────────────
+    - service: notify.minor_audience
+      data:
+        message: clear_notification
         data:
-          message: clear_notification
-          data:
-            tag: "alert_{{ tag }}"
+          tag: "alert_{{ tag }}"
 
-      - service: notify.security_audience
+    - service: notify.major_audience
+      data:
+        message: clear_notification
         data:
-          message: clear_notification
-          data:
-            tag: "alert_{{ tag }}"
+          tag: "alert_{{ tag }}"
 
-      - service: notify.critical_audience
+    - service: notify.security_audience
+      data:
+        message: clear_notification
         data:
-          message: clear_notification
-          data:
-            tag: "alert_{{ tag }}"
+          tag: "alert_{{ tag }}"
 
-      # ── 3. Update status_helper ────────────────────────────────────────────
-      # Security acknowledge: reset to idle (ready to retrigger immediately)
-      # All others: acknowledged or idle based on acknowledged flag
-      - if:
-          - condition: template
-            value_template: "{{ status_helper != '' }}"
-        then:
-          - service: input_select.select_option
-            target:
-              entity_id: "{{ status_helper }}"
-            data:
-              option: >-
-                {% if severity == 'security' %}idle
-                {% elif acknowledged %}acknowledged
-                {% else %}idle{% endif %}
+    - service: notify.critical_audience
+      data:
+        message: clear_notification
+        data:
+          tag: "alert_{{ tag }}"
+
+    # ── 3. Update status_helper ────────────────────────────────────────────
+    # Security acknowledge: reset to idle (ready to retrigger immediately)
+    # All others: acknowledged or idle based on acknowledged flag
+    - if:
+        - condition: template
+          value_template: "{{ status_helper != '' }}"
+      then:
+        - service: input_select.select_option
+          target:
+            entity_id: "{{ status_helper }}"
+          data:
+            option: >-
+              {% if severity == 'security' %}idle
+              {% elif acknowledged %}acknowledged
+              {% else %}idle{% endif %}
