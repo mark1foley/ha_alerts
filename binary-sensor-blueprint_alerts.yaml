@@ -1,5 +1,5 @@
 ###############################################################################
-# binary-sensor-blueprint_alerts.yaml (extract)
+# binary-sensor-blueprint_alerts.yaml
 #
 # Alert binary sensors are defined here using the alert_binary_sensor blueprint.
 # Each entry creates one binary sensor with a consistent attribute schema.
@@ -20,11 +20,14 @@
 #      trigger_entity: input_boolean.alert_garage_door_open
 #      trigger_state: 'on'
 #      severity: major
+#      not_home_severity: critical
 #      title: Garage Door Open
 #      message: The garage door has been open and no one is home
 #      tag: garage_door_open
 #      status_helper: input_select.alert_status_garage_door_open
 #      image_path: /local/alerts/garage_door_open.jpg
 #      dashboard_url: /lovelace/security
+#      skip_first: false
+#      is_suppressible: false
 #  unique_id: alert_garage_door_open
 
