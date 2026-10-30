@@ -36,16 +36,22 @@
 #   automated_alert: true   (self-documenting flag)
 #   trigger_entity:         The entity driving this alert
 #   trigger_state:          The state that activates this alert
-#   severity:               info | minor | action | major | critical
+#   severity:               info | minor | action | major | security | critical
+#   not_home_severity:      optional severity override when binary_sensor.automated_alert_home is off
+#   is_suppressible:        true | false - can be suppressed by silencer (default true)
+#   skip_first:             true | false - skip first notification, notify on first repeat
 #   title:                  Short alert title
 #   message:                Full alert message
 #   tag:                    Unique snake_case identifier
 #   status_helper:          input_select entity ID or empty string
-#   skip_first:             true | false - skip first notification, notify on first repeat
-#   not_home_severity:      optional severity override when binary_sensor.automated_alert_home is off
-#   is_suppressible:        true | false - can be suppressed by silencer (default true)
 #   image_path:             Path to image file or empty string
 #   dashboard_url:          Lovelace URL or empty string (falls back to global default)
+#   action_1_title:         Optional first action button title (replaces Acknowledge)
+#   action_1_service:       Service to call when action button 1 tapped
+#   action_1_target:        Target entity for action_1_service
+#   action_2_title:         Optional second action button title
+#   action_2_service:       Service to call when action button 2 tapped
+#   action_2_target:        Target entity for action_2_service
 #
 # Entity ID and friendly name are derived automatically from the tag:
 #   tag: garage_door_open
@@ -246,6 +252,66 @@ blueprint:
       selector:
         text:
 
+    action_1_title:
+      name: Action button 1 title (optional)
+      description: >
+        Title for the first custom action button on the mobile notification.
+        When set, replaces the standard Acknowledge button.
+        Tapping the button calls action_1_service on action_1_target and
+        sets status to actioned (repeats continue until condition resolves).
+        e.g. Close Door, Turn Off, Lock
+      default: ""
+      selector:
+        text:
+
+    action_1_service:
+      name: Action button 1 service (optional)
+      description: >
+        HA service to call when action button 1 is tapped.
+        e.g. cover.close_cover, switch.turn_off, lock.lock
+        Leave empty if action_1_title is not set.
+      default: ""
+      selector:
+        text:
+
+    action_1_target:
+      name: Action button 1 target entity (optional)
+      description: >
+        Entity ID to pass as the target when calling action_1_service.
+        e.g. cover.garage_door, switch.pool_pump
+        Leave empty if action_1_title is not set.
+      default: ""
+      selector:
+        entity:
+
+    action_2_title:
+      name: Action button 2 title (optional)
+      description: >
+        Title for the second custom action button on the mobile notification.
+        Requires action_1_title to also be set.
+        Same behaviour as action button 1 — sets status to actioned.
+      default: ""
+      selector:
+        text:
+
+    action_2_service:
+      name: Action button 2 service (optional)
+      description: >
+        HA service to call when action button 2 is tapped.
+        Leave empty if action_2_title is not set.
+      default: ""
+      selector:
+        text:
+
+    action_2_target:
+      name: Action button 2 target entity (optional)
+      description: >
+        Entity ID to pass as the target when calling action_2_service.
+        Leave empty if action_2_title is not set.
+      default: ""
+      selector:
+        entity:
+
 # ── Variables ─────────────────────────────────────────────────────────────────
 # Only trigger_entity is used in the state/availability templates to ensure
 # reactive updates. All other inputs are stored as static attributes.
@@ -263,6 +329,12 @@ variables:
   is_suppressible: !input is_suppressible
   image_path: !input image_path
   dashboard_url: !input dashboard_url
+  action_1_title: !input action_1_title
+  action_1_service: !input action_1_service
+  action_1_target: !input action_1_target
+  action_2_title: !input action_2_title
+  action_2_service: !input action_2_service
+  action_2_target: !input action_2_target
 
 # ── Binary sensor definition ──────────────────────────────────────────────────
 # Name is derived from tag for consistent entity IDs.
@@ -292,3 +364,9 @@ binary_sensor:
     status_helper: "{{ status_helper }}"
     image_path: "{{ image_path }}"
     dashboard_url: "{{ dashboard_url }}"
+    action_1_title: "{{ action_1_title }}"
+    action_1_service: "{{ action_1_service }}"
+    action_1_target: "{{ action_1_target }}"
+    action_2_title: "{{ action_2_title }}"
+    action_2_service: "{{ action_2_service }}"
+    action_2_target: "{{ action_2_target }}"

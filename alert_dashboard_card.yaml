@@ -7,9 +7,9 @@
 # Features:
 #   - Expands binary_sensor.automated_alert_sensors group
 #   - Filters to active (on) alerts only
-#   - Severity-based colour coding (critical=red, major=orange, action=yellow, minor=amber, info=green)
+#   - Severity-based colour coding using effective severity (not_home_severity when away)
 #   - Shows alert title and message
-#   - Shows current status (notified/skipped/acknowledged/suppressed) top-right
+#   - Shows current status (notified/skipped/acknowledged/suppressed/actioned) top-right
 #   - Tap to mark Done (turns off trigger_entity - intended for action severity)
 #   - Hold to Acknowledge (calls script.alert_clear with acknowledged: true)
 #
@@ -43,7 +43,7 @@ filter:
             [[[  var helper = entity.attributes.status_helper; if (!helper ||
             helper === '') return 'Notified'; var s = states[helper] ?
             states[helper].state : ''; return ['idle', 'notified',
-            'acknowledged', 'skipped', 'suppressed'].includes(s) ? s.charAt(0).toUpperCase() + s.slice(1) :
+            'acknowledged', 'skipped', 'suppressed', 'actioned'].includes(s) ? s.charAt(0).toUpperCase() + s.slice(1) :
             'Notified'; ]]]
         styles:
           card:
@@ -86,7 +86,9 @@ filter:
               card:
                 - background: |
                     [[[
-                      var sev = entity.attributes.severity;
+                      var notHomeSev = entity.attributes.not_home_severity;
+                      var isHome = states['binary_sensor.automated_alert_home'] ? states['binary_sensor.automated_alert_home'].state === 'on' : true;
+                      var sev = (!isHome && notHomeSev && notHomeSev !== '') ? notHomeSev : entity.attributes.severity;
                       if (sev === 'critical') return '#F3E5F5';
                       if (sev === 'security') return '#E8EAF6';
                       if (sev === 'major') return '#FFF3E0';
@@ -96,7 +98,9 @@ filter:
                     ]]]
                 - border-left: |
                     [[[
-                      var sev = entity.attributes.severity;
+                      var notHomeSev = entity.attributes.not_home_severity;
+                      var isHome = states['binary_sensor.automated_alert_home'] ? states['binary_sensor.automated_alert_home'].state === 'on' : true;
+                      var sev = (!isHome && notHomeSev && notHomeSev !== '') ? notHomeSev : entity.attributes.severity;
                       if (sev === 'critical') return '4px solid #6A1B9A';
                       if (sev === 'security') return '4px solid #1A237E';
                       if (sev === 'major') return '4px solid #E65100';
@@ -107,7 +111,9 @@ filter:
               icon:
                 - color: |
                     [[[
-                      var sev = entity.attributes.severity;
+                      var notHomeSev = entity.attributes.not_home_severity;
+                      var isHome = states['binary_sensor.automated_alert_home'] ? states['binary_sensor.automated_alert_home'].state === 'on' : true;
+                      var sev = (!isHome && notHomeSev && notHomeSev !== '') ? notHomeSev : entity.attributes.severity;
                       if (sev === 'critical') return '#6A1B9A';
                       if (sev === 'security') return '#1A237E';
                       if (sev === 'major') return '#E65100';
@@ -118,7 +124,9 @@ filter:
               name:
                 - color: |
                     [[[
-                      var sev = entity.attributes.severity;
+                      var notHomeSev = entity.attributes.not_home_severity;
+                      var isHome = states['binary_sensor.automated_alert_home'] ? states['binary_sensor.automated_alert_home'].state === 'on' : true;
+                      var sev = (!isHome && notHomeSev && notHomeSev !== '') ? notHomeSev : entity.attributes.severity;
                       if (sev === 'critical') return '#4A148C';
                       if (sev === 'security') return '#0D1B8E';
                       if (sev === 'major') return '#BF360C';
@@ -129,7 +137,9 @@ filter:
               label:
                 - color: |
                     [[[
-                      var sev = entity.attributes.severity;
+                      var notHomeSev = entity.attributes.not_home_severity;
+                      var isHome = states['binary_sensor.automated_alert_home'] ? states['binary_sensor.automated_alert_home'].state === 'on' : true;
+                      var sev = (!isHome && notHomeSev && notHomeSev !== '') ? notHomeSev : entity.attributes.severity;
                       if (sev === 'critical') return '#4A148C';
                       if (sev === 'security') return '#0D1B8E';
                       if (sev === 'major') return '#BF360C';
@@ -148,7 +158,7 @@ filter:
           service_data:
             tag: "[[[ return entity.attributes.tag ]]]"
             acknowledged: true
-            severity: "[[[ return entity.attributes.severity ]]]"
+            severity: "[[[ var notHomeSev = entity.attributes.not_home_severity; var isHome = states['binary_sensor.automated_alert_home'] ? states['binary_sensor.automated_alert_home'].state === 'on' : true; return (!isHome && notHomeSev && notHomeSev !== '') ? notHomeSev : entity.attributes.severity; ]]]"
             status_helper: "[[[ return entity.attributes.status_helper ]]]"
 
 # ─────────────────────────────────────────────────────────────────────────────

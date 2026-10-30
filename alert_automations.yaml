@@ -226,11 +226,11 @@
                   {% set is_suppressed = is_home and is_state('input_boolean.automated_alert_suppressor', 'on') and state_attr(repeat.item, 'is_suppressible') == true %}
                   {{ not is_suppressed and (
                       (status == 'suppressed') or
-                      (status in ('notified', 'idle', 'skipped') and (
+                      (status in ('notified', 'idle', 'skipped', 'actioned') and (
                           effective_severity == 'critical' or
                           (effective_severity == 'major' and now().minute % 15 == 0) or
                           (effective_severity == 'action' and now().minute == 0) or
-                          (trigger.id == 'home_changed' and not_home_severity != '' and status in ('notified', 'idle', 'skipped'))
+                          (trigger.id == 'home_changed' and not_home_severity != '' and status in ('notified', 'idle', 'skipped', 'actioned'))
                       ))
                     ) }}
             then:
@@ -251,15 +251,21 @@
 ###############################################################################
 # AUTOMATION 3: Alert Framework - Acknowledge
 #
-# Listens for mobile push notification action button presses matching ACK_<TAG>.
-# Sets status_helper to acknowledged, clears mobile tray, stops repeats.
+# Listens for mobile push notification action button presses:
+#   ACK_<TAG>     — standard acknowledge (stops repeats, sets to acknowledged)
+#   ACTION1_<TAG> — custom action button 1 (calls service, sets to actioned)
+#   ACTION2_<TAG> — custom action button 2 (calls service, sets to actioned)
+#
+# For custom action buttons, repeats continue until condition resolves.
 ###############################################################################
 
 - id: alert_framework_acknowledge
   alias: "Alert Framework: Acknowledge"
   description: >
-    Listens for mobile push notification action button presses matching ACK_<TAG>.
-    Sets status_helper to acknowledged, clears mobile tray, stops repeats.
+    Listens for mobile push notification action button presses.
+    ACK_<TAG>: sets status to acknowledged, clears mobile tray, stops repeats.
+    ACTION1_<TAG> / ACTION2_<TAG>: calls configured service, sets status to
+    actioned (repeats continue until condition resolves or user acknowledges).
   mode: parallel
   max: 20
 
@@ -270,12 +276,24 @@
   condition:
     - condition: template
       value_template: >
-        {{ trigger.event.data.action.startswith('ACK_') }}
+        {{ trigger.event.data.action.startswith('ACK_') or
+           trigger.event.data.action.startswith('ACTION1_') or
+           trigger.event.data.action.startswith('ACTION2_') }}
 
   action:
     - variables:
+        raw_action: "{{ trigger.event.data.action }}"
+        is_ack: "{{ raw_action.startswith('ACK_') }}"
+        is_action1: "{{ raw_action.startswith('ACTION1_') }}"
+        is_action2: "{{ raw_action.startswith('ACTION2_') }}"
         action_tag: >
-          {{ trigger.event.data.action | replace('ACK_', '') | lower }}
+          {% if is_ack %}
+            {{ raw_action | replace('ACK_', '') | lower }}
+          {% elif is_action1 %}
+            {{ raw_action | replace('ACTION1_', '') | lower }}
+          {% else %}
+            {{ raw_action | replace('ACTION2_', '') | lower }}
+          {% endif %}
         matching_sensor: >
           {{ expand('binary_sensor.automated_alert_sensors')
               | selectattr('attributes.tag', 'defined')
@@ -286,24 +304,132 @@
         - condition: template
           value_template: "{{ matching_sensor != none }}"
       then:
-        - action: script.alert_clear
-          data:
-            tag: "{{ action_tag }}"
-            acknowledged: true
-            severity: >-
-              {{ state_attr(
-                expand('binary_sensor.automated_alert_sensors')
-                | selectattr('attributes.tag', 'defined')
-                | selectattr('attributes.tag', 'eq', action_tag)
-                | map(attribute='entity_id') | list | first | default(''),
-                'severity') or '' }}
-            status_helper: >-
-              {{ state_attr(
-                expand('binary_sensor.automated_alert_sensors')
-                | selectattr('attributes.tag', 'defined')
-                | selectattr('attributes.tag', 'eq', action_tag)
-                | map(attribute='entity_id') | list | first | default(''),
-                'status_helper') or '' }}
+
+        # ── Standard acknowledge ───────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ is_ack }}"
+          then:
+            - action: script.alert_clear
+              data:
+                tag: "{{ action_tag }}"
+                acknowledged: true
+                severity: >-
+                  {{ state_attr(
+                    expand('binary_sensor.automated_alert_sensors')
+                    | selectattr('attributes.tag', 'defined')
+                    | selectattr('attributes.tag', 'eq', action_tag)
+                    | map(attribute='entity_id') | list | first | default(''),
+                    'severity') or '' }}
+                status_helper: >-
+                  {{ state_attr(
+                    expand('binary_sensor.automated_alert_sensors')
+                    | selectattr('attributes.tag', 'defined')
+                    | selectattr('attributes.tag', 'eq', action_tag)
+                    | map(attribute='entity_id') | list | first | default(''),
+                    'status_helper') or '' }}
+
+        # ── Custom action button 1 ─────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ is_action1 }}"
+          then:
+            - variables:
+                sensor_entity_id: >
+                  {{ expand('binary_sensor.automated_alert_sensors')
+                      | selectattr('attributes.tag', 'defined')
+                      | selectattr('attributes.tag', 'eq', action_tag)
+                      | map(attribute='entity_id') | list | first | default('') }}
+            # Call the configured service
+            - if:
+                - condition: template
+                  value_template: "{{ state_attr(sensor_entity_id, 'action_1_service') not in ('', none) }}"
+              then:
+                - action: "{{ state_attr(sensor_entity_id, 'action_1_service') }}"
+                  target:
+                    entity_id: "{{ state_attr(sensor_entity_id, 'action_1_target') }}"
+            # Set status to actioned (repeats continue)
+            - if:
+                - condition: template
+                  value_template: "{{ state_attr(sensor_entity_id, 'status_helper') not in ('', none) }}"
+              then:
+                - action: input_select.select_option
+                  target:
+                    entity_id: "{{ state_attr(sensor_entity_id, 'status_helper') }}"
+                  data:
+                    option: actioned
+            # Clear mobile tray
+            - action: notify.minor_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+            - action: notify.major_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+            - action: notify.security_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+            - action: notify.critical_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+
+        # ── Custom action button 2 ─────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ is_action2 }}"
+          then:
+            - variables:
+                sensor_entity_id: >
+                  {{ expand('binary_sensor.automated_alert_sensors')
+                      | selectattr('attributes.tag', 'defined')
+                      | selectattr('attributes.tag', 'eq', action_tag)
+                      | map(attribute='entity_id') | list | first | default('') }}
+            # Call the configured service
+            - if:
+                - condition: template
+                  value_template: "{{ state_attr(sensor_entity_id, 'action_2_service') not in ('', none) }}"
+              then:
+                - action: "{{ state_attr(sensor_entity_id, 'action_2_service') }}"
+                  target:
+                    entity_id: "{{ state_attr(sensor_entity_id, 'action_2_target') }}"
+            # Set status to actioned (repeats continue)
+            - if:
+                - condition: template
+                  value_template: "{{ state_attr(sensor_entity_id, 'status_helper') not in ('', none) }}"
+              then:
+                - action: input_select.select_option
+                  target:
+                    entity_id: "{{ state_attr(sensor_entity_id, 'status_helper') }}"
+                  data:
+                    option: actioned
+            # Clear mobile tray
+            - action: notify.minor_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+            - action: notify.major_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+            - action: notify.security_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
+            - action: notify.critical_audience
+              data:
+                message: clear_notification
+                data:
+                  tag: "alert_{{ action_tag }}"
 
 
 ###############################################################################

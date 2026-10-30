@@ -1,0 +1,117 @@
+alias: "Alert Framework: Create Status Helpers"
+description: Creates all input_select status helpers for the alert framework
+mode: single
+sequence:
+  - repeat:
+      for_each:
+        # ── Blinds ──────────────────────────────────────────────────────
+        - tag: blind_hallway_window_low_battery
+          name: Alert Status Blind Hallway Window Low Battery
+        - tag: blind_laundry_window_low_battery
+          name: Alert Status Blind Laundry Window Low Battery
+        - tag: blind_living_room_sliding_low_battery
+          name: Alert Status Blind Living Room Sliding Low Battery
+        - tag: blind_main_bedroom_sliding_low_battery
+          name: Alert Status Blind Main Bedroom Sliding Low Battery
+        - tag: blind_spare_bedroom_window_low_battery
+          name: Alert Status Blind Spare Bedroom Window Low Battery
+        - tag: blind_study_window_low_battery
+          name: Alert Status Blind Study Window Low Battery
+        # ── Doors ───────────────────────────────────────────────────────
+        - tag: door_balcony_security_low_battery
+          name: Alert Status Balcony Security Door Low Battery
+        - tag: door_balcony_sliding_low_battery
+          name: Alert Status Balcony Sliding Door Low Battery
+        - tag: door_bathroom_low_battery
+          name: Alert Status Bathroom Door Low Battery
+        - tag: door_ensuite_low_battery
+          name: Alert Status Ensuite Door Low Battery
+        - tag: door_front_low_battery
+          name: Alert Status Front Door Low Battery
+        - tag: door_front_security_low_battery
+          name: Alert Status Front Security Door Low Battery
+        - tag: door_garage_low_battery
+          name: Alert Status Garage Door Low Battery
+        - tag: door_garage_back_low_battery
+          name: Alert Status Garage Back Door Low Battery
+        - tag: door_laundry_low_battery
+          name: Alert Status Laundry Door Low Battery
+        - tag: door_living_room_low_battery
+          name: Alert Status Living Room Door Low Battery
+        - tag: door_living_room_security_low_battery
+          name: Alert Status Living Room Security Door Low Battery
+        - tag: door_living_room_sliding_low_battery
+          name: Alert Status Living Room Sliding Door Low Battery
+        - tag: door_main_bedroom_low_battery
+          name: Alert Status Main Bedroom Door Low Battery
+        - tag: door_patio_low_battery
+          name: Alert Status Patio Door Low Battery
+        - tag: door_powder_room_low_battery
+          name: Alert Status Powder Room Door Low Battery
+        - tag: door_spare_bedroom_low_battery
+          name: Alert Status Spare Bedroom Door Low Battery
+        - tag: door_stairs_cupboard_low_battery
+          name: Alert Status Stairs Cupboard Door Low Battery
+        - tag: door_study_low_battery
+          name: Alert Status Study Door Low Battery
+        - tag: door_walk_in_robe_low_battery
+          name: Alert Status Walk In Robe Door Low Battery
+        # ── Motion ──────────────────────────────────────────────────────
+        - tag: motion_balcony_low_battery
+          name: Alert Status Balcony Motion Low Battery
+        - tag: motion_hallway_low_battery
+          name: Alert Status Hallway Motion Low Battery
+        - tag: motion_kitchen_low_battery
+          name: Alert Status Kitchen Motion Low Battery
+        - tag: motion_laundry_low_battery
+          name: Alert Status Laundry Motion Low Battery
+        - tag: motion_living_room_low_battery
+          name: Alert Status Living Room Motion Low Battery
+        - tag: motion_walk_in_robe_low_battery
+          name: Alert Status Walk In Robe Motion Low Battery
+        # ── Water ───────────────────────────────────────────────────────
+        - tag: water_bathroom_low_battery
+          name: Alert Status Bathroom Water Low Battery
+        - tag: water_ensuite_low_battery
+          name: Alert Status Ensuite Water Low Battery
+        - tag: water_kitchen_fridge_low_battery
+          name: Alert Status Kitchen Fridge Water Low Battery
+        - tag: water_kitchen_sink_low_battery
+          name: Alert Status Kitchen Sink Water Low Battery
+        - tag: water_laundry_cupboard_low_battery
+          name: Alert Status Laundry Cupboard Water Low Battery
+        - tag: water_powder_room_low_battery
+          name: Alert Status Powder Room Water Low Battery
+        - tag: water_washing_machine_low_battery
+          name: Alert Status Washing Machine Water Low Battery
+        # ── Weather ─────────────────────────────────────────────────────
+        - tag: weather_study_low_battery
+          name: Alert Status Weather Study Low Battery
+        # ── Windows ─────────────────────────────────────────────────────
+        - tag: window_bathroom_low_battery
+          name: Alert Status Bathroom Window Low Battery
+        - tag: window_ensuite_low_battery
+          name: Alert Status Ensuite Window Low Battery
+        - tag: window_laundry_low_battery
+          name: Alert Status Laundry Window Low Battery
+        - tag: window_main_bedroom_low_battery
+          name: Alert Status Main Bedroom Window Low Battery
+        - tag: window_powder_room_low_battery
+          name: Alert Status Powder Room Window Low Battery
+        - tag: window_spare_bedroom_low_battery
+          name: Alert Status Spare Bedroom Window Low Battery
+        - tag: window_study_low_battery
+          name: Alert Status Study Window Low Battery
+      sequence:
+        - action: input_select.create
+          data:
+            name: "{{ repeat.item.name }}"
+            object_id: "alert_status_{{ repeat.item.tag }}"
+            options:
+              - idle
+              - skipped
+              - suppressed
+              - notified
+              - actioned
+              - acknowledged
+            icon: mdi:alert

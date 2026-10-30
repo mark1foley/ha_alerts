@@ -6,6 +6,7 @@ script:
       Routes to persistent notification, mobile push, and TTS based on severity.
       Sets status_helper to 'notified' after sending notification (except security
       which resets to idle to allow retriggering).
+      If action_1_title is set, shows custom action buttons instead of Acknowledge.
       Badge count is handled by the Alert Framework: Badge Sync automation.
       Called by alert automations - do not call directly from other automations.
     mode: parallel
@@ -61,6 +62,18 @@ script:
         selector:
           entity:
             domain: media_player
+      action_1_title:
+        description: "Optional first custom action button title (replaces Acknowledge when set)"
+        required: false
+        default: ""
+        selector:
+          text:
+      action_2_title:
+        description: "Optional second custom action button title"
+        required: false
+        default: ""
+        selector:
+          text:
 
     sequence:
 
@@ -102,10 +115,15 @@ script:
                     {% if severity in ['critical', 'security'] %}critical
                     {% elif severity == 'major' %}time-sensitive
                     {% else %}active{% endif %}
-                actions:
-                  - action: "ACK_{{ tag | upper }}"
-                    title: Acknowledge
-                    destructive: false
+                actions: >-
+                  {% if action_1_title is defined and action_1_title != '' %}
+                    [{"action": "ACTION1_{{ tag | upper }}", "title": "{{ action_1_title }}", "destructive": false}
+                    {%- if action_2_title is defined and action_2_title != '' %},
+                    {"action": "ACTION2_{{ tag | upper }}", "title": "{{ action_2_title }}", "destructive": false}
+                    {%- endif %}]
+                  {% else %}
+                    [{"action": "ACK_{{ tag | upper }}", "title": "Acknowledge", "destructive": false}]
+                  {% endif %}
 
       # ── 3. TTS (security always, others only when tts_target provided) ─────
       - if:
