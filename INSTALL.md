@@ -1,4 +1,3 @@
-
 # Alert Framework – Manual Installation Guide
 
 Manual install for a fresh Home Assistant instance. Allow ~30 minutes plus one full restart (step 8).
@@ -17,17 +16,17 @@ Work through the steps in order and tick off the checks at the end of each.
 
 ## Files in this package
 
-| File                                                      | Goes to                                                                |
-| --------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `alert_binary_sensor_blueprint.yaml`                    | `config/blueprints/template/mark1foley/`                             |
-| `alert_counter_sensor.yaml`                             | optional YAML alternative to the step 5 helper (has the icon template) |
-| `alert_notify_groups.yaml`                              | `config/alert_notify_groups.yaml`                                    |
-| `alert_notify_script.yaml`, `alert_clear_script.yaml` | append to `scripts.yaml`                                             |
-| `alert_automations.yaml`                                | merge into `automations.yaml`                                        |
-| `input_selects_alerts.yaml`                             | example status helpers (`input_select:`)                             |
-| `binary-sensor-blueprint_alerts.yaml`                   | your alert entries, in `config/template-sensors/`                    |
-| `low_battery_alerts.yaml`                               | example alert entries (low battery)                                    |
-| `alert_dashboard_card.yaml`                             | dashboard card (step 12)                                               |
+| File | Goes to |
+|---|---|
+| `alert_binary_sensor_blueprint.yaml` | `config/blueprints/template/mark1foley/` |
+| `alert_counter_sensor.yaml` | optional YAML alternative to the step 5 helper (has the icon template) |
+| `alert_notify_groups.yaml` | `config/alert_notify_groups.yaml` |
+| `alert_notify_script.yaml`, `alert_clear_script.yaml` | append to `scripts.yaml` |
+| `alert_automations.yaml` | merge into `automations.yaml` |
+| `input_selects_alerts.yaml` | example status helpers (`input_select:`) |
+| `binary-sensor-blueprint_alerts.yaml` | your alert entries, in `config/template-sensors/` |
+| `low_battery_alerts.yaml` | example alert entries (low battery) |
+| `alert_dashboard_card.yaml` | dashboard card (step 12) |
 
 The blueprint folder name `mark1foley` must match the `path:` used in every `use_blueprint` entry.
 
@@ -50,12 +49,12 @@ HA only picks up a new or changed blueprint file after a full restart; step 8 co
 
 Settings → Devices & services → Helpers → Create helper. Entity IDs must match exactly:
 
-| Type                         | Name                              | Resulting entity ID                                |
-| ---------------------------- | --------------------------------- | -------------------------------------------------- |
-| Toggle                       | Automated Alert Startup Complete  | `input_boolean.automated_alert_startup_complete` |
-| Toggle                       | Automated Alert Suppressor        | `input_boolean.automated_alert_suppressor`       |
-| Text                         | Automated Alert Default Dashboard | `input_text.automated_alert_default_dashboard`   |
-| Group → Binary sensor group | Automated Alert Sensors           | `binary_sensor.automated_alert_sensors`          |
+| Type | Name | Resulting entity ID |
+|---|---|---|
+| Toggle | Automated Alert Startup Complete | `input_boolean.automated_alert_startup_complete` |
+| Toggle | Automated Alert Suppressor | `input_boolean.automated_alert_suppressor` |
+| Text | Automated Alert Default Dashboard | `input_text.automated_alert_default_dashboard` |
+| Group → Binary sensor group | Automated Alert Sensors | `binary_sensor.automated_alert_sensors` |
 
 - Suppressor: **on** = alerts flagged `is_suppressible` are held back while someone is home.
 - Default dashboard: a path such as `/lovelace/alerts`, used when an alert sets no `dashboard_url`.
@@ -117,6 +116,7 @@ Counts active alerts (excluding security). It triggers the State Change automati
        | list
        | count }}
    ```
+
 4. Leave unit of measurement, device class and state class blank (the form only offers a fixed list
    of units, and the framework doesn't use one), then Submit.
 5. Optional: open the entity's settings and set an icon (for example `mdi:shield-alert`).
@@ -140,7 +140,7 @@ Give everything the framework creates the same category so it's easy to find and
 
 Result on the Entities page, grouped by category:
 
-![Alerts Framework helpers](alert_framework_helpers.png)
+![Alerts Framework helpers](docs/images/alert_framework_helpers.png)
 
 **(unverified)** I'm describing the category UI from how it's normally laid out; menu wording may differ in your HA version.
 
@@ -265,7 +265,6 @@ For each alert add a `use_blueprint` entry to `binary-sensor-blueprint_alerts.ya
 ```
 
 Rules:
-
 - `unique_id` goes on the `use_blueprint` entry (not inside `input`), convention `alert_<tag>`.
 - The entity ID becomes `binary_sensor.alert_<tag>` and must be unique.
 - Then add `binary_sensor.alert_<tag>` to the `binary_sensor.automated_alert_sensors` group

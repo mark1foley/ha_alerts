@@ -82,7 +82,7 @@ alert_clear:
     # All others: acknowledged or idle based on acknowledged flag
     - if:
         - condition: template
-          value_template: "{{ status_helper != '' }}"
+          value_template: "{{ (status_helper | default('')) != '' }}"
       then:
         - service: input_select.select_option
           target:

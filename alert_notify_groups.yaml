@@ -10,6 +10,7 @@
 #
 # Audience structure:
 #   minor_audience    — minor alerts
+#   action_audience   — action alerts
 #   major_audience    — major alerts
 #   security_audience — security alerts
 #   critical_audience — critical alerts
@@ -20,6 +21,11 @@
 
 - platform: group
   name: minor_audience
+  services:
+    - action: mobile_app_mafone
+
+- platform: group
+  name: action_audience
   services:
     - action: mobile_app_mafone
 
