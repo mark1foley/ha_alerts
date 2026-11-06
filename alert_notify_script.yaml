@@ -139,7 +139,7 @@ alert_notify:
     # All others: set to notified
     - if:
         - condition: template
-          value_template: "{{ status_helper != '' }}"
+          value_template: "{{ (status_helper | default('')) != '' }}"
       then:
         - service: input_select.select_option
           target:

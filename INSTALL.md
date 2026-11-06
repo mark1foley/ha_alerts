@@ -1,3 +1,4 @@
+
 # Alert Framework – Manual Installation Guide
 
 Manual install for a fresh Home Assistant instance. Allow ~30 minutes plus one full restart (step 8).
@@ -16,17 +17,17 @@ Work through the steps in order and tick off the checks at the end of each.
 
 ## Files in this package
 
-| File | Goes to |
-|---|---|
-| `alert_binary_sensor_blueprint.yaml` | `config/blueprints/template/mark1foley/` |
-| `alert_counter_sensor.yaml` | optional YAML alternative to the step 5 helper (has the icon template) |
-| `alert_notify_groups.yaml` | `config/alert_notify_groups.yaml` |
-| `alert_notify_script.yaml`, `alert_clear_script.yaml` | append to `scripts.yaml` |
-| `alert_automations.yaml` | merge into `automations.yaml` |
-| `input_selects_alerts.yaml` | example status helpers (`input_select:`) |
-| `binary-sensor-blueprint_alerts.yaml` | your alert entries, in `config/template-sensors/` |
-| `low_battery_alerts.yaml` | example alert entries (low battery) |
-| `alert_dashboard_card.yaml` | dashboard card (step 12) |
+| File                                                      | Goes to                                                                |
+| --------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `alert_binary_sensor_blueprint.yaml`                    | `config/blueprints/template/mark1foley/`                             |
+| `alert_counter_sensor.yaml`                             | optional YAML alternative to the step 5 helper (has the icon template) |
+| `alert_notify_groups.yaml`                              | `config/alert_notify_groups.yaml`                                    |
+| `alert_notify_script.yaml`, `alert_clear_script.yaml` | append to `scripts.yaml`                                             |
+| `alert_automations.yaml`                                | merge into `automations.yaml`                                        |
+| `input_selects_alerts.yaml`                             | example status helpers (`input_select:`)                             |
+| `binary-sensor-blueprint_alerts.yaml`                   | your alert entries, in `config/template-sensors/`                    |
+| `low_battery_alerts.yaml`                               | example alert entries (low battery)                                    |
+| `alert_dashboard_card.yaml`                             | dashboard card (step 12)                                               |
 
 The blueprint folder name `mark1foley` must match the `path:` used in every `use_blueprint` entry.
 
@@ -49,12 +50,12 @@ HA only picks up a new or changed blueprint file after a full restart; step 8 co
 
 Settings → Devices & services → Helpers → Create helper. Entity IDs must match exactly:
 
-| Type | Name | Resulting entity ID |
-|---|---|---|
-| Toggle | Automated Alert Startup Complete | `input_boolean.automated_alert_startup_complete` |
-| Toggle | Automated Alert Suppressor | `input_boolean.automated_alert_suppressor` |
-| Text | Automated Alert Default Dashboard | `input_text.automated_alert_default_dashboard` |
-| Group → Binary sensor group | Automated Alert Sensors | `binary_sensor.automated_alert_sensors` |
+| Type                         | Name                              | Resulting entity ID                                |
+| ---------------------------- | --------------------------------- | -------------------------------------------------- |
+| Toggle                       | Automated Alert Startup Complete  | `input_boolean.automated_alert_startup_complete` |
+| Toggle                       | Automated Alert Suppressor        | `input_boolean.automated_alert_suppressor`       |
+| Text                         | Automated Alert Default Dashboard | `input_text.automated_alert_default_dashboard`   |
+| Group → Binary sensor group | Automated Alert Sensors           | `binary_sensor.automated_alert_sensors`          |
 
 - Suppressor: **on** = alerts flagged `is_suppressible` are held back while someone is home.
 - Default dashboard: a path such as `/lovelace/alerts`, used when an alert sets no `dashboard_url`.
@@ -75,9 +76,11 @@ Settings → Devices & services → Helpers → Create helper. Entity IDs must m
 2. In `configuration.yaml`: `notify: !include alert_notify_groups.yaml`
    (or merge into your existing `notify:` section).
 
-This creates `notify.minor_audience`, `notify.major_audience`, `notify.security_audience` and
-`notify.critical_audience`. Each severity goes only to its own group, so list a device in every
-group it should hear. Group notify platforms need a full restart; step 8 covers this, so don't restart yet.
+This creates `notify.minor_audience`, `notify.action_audience`, `notify.major_audience`,
+`notify.security_audience`, `notify.critical_audience` and `notify.badge_audience`. Each severity goes only
+to its own group, so list a device in every group it should hear. `badge_audience` is for **iOS devices
+only** (see Platform notes below); leave Android devices out of it.
+Group notify platforms need a full restart; step 8 covers this, so don't restart yet.
 
 ## Step 4 – "Someone is home" sensor
 
@@ -114,7 +117,6 @@ Counts active alerts (excluding security). It triggers the State Change automati
        | list
        | count }}
    ```
-
 4. Leave unit of measurement, device class and state class blank (the form only offers a fixed list
    of units, and the framework doesn't use one), then Submit.
 5. Optional: open the entity's settings and set an icon (for example `mdi:shield-alert`).
@@ -174,7 +176,7 @@ Full restart (Developer tools → YAML → Restart), not just a reload. Then tur
 `input_boolean.automated_alert_startup_complete` **on** once; afterwards the Startup automation manages
 it (it turns it off on boot and back on after a 2-minute delay, so alerts don't flood on restart).
 
-**Check:** the four `notify.*_audience` services exist; `script.alert_notify` and `script.alert_clear` exist;
+**Check:** the six `notify.*_audience` services exist; `script.alert_notify` and `script.alert_clear` exist;
 the six automations are enabled; `sensor.automated_alert_active_count` reads 0.
 
 ## Step 9 – Status helpers (one per alert)
@@ -263,6 +265,7 @@ For each alert add a `use_blueprint` entry to `binary-sensor-blueprint_alerts.ya
 ```
 
 Rules:
+
 - `unique_id` goes on the `use_blueprint` entry (not inside `input`), convention `alert_<tag>`.
 - The entity ID becomes `binary_sensor.alert_<tag>` and must be unique.
 - Then add `binary_sensor.alert_<tag>` to the `binary_sensor.automated_alert_sensors` group
@@ -285,6 +288,18 @@ helper entity ID matches; the automation traces (Settings → Automations → tr
 Install `auto-entities` and `button-card` via HACS, then paste `alert_dashboard_card.yaml` into a
 dashboard card (raw configuration editor). It lists the group members and shows severity colour,
 title, message and status, with tap = mark done and hold = acknowledge/clear.
+
+## Platform notes (iOS and Android)
+
+- **Badge count (iOS only).** The Badge Sync automations set the app icon badge with a silent
+  `delete_alert` message. This is an iOS Companion app feature; on Android the message would be shown as
+  text. They send only to `notify.badge_audience`, so keep Android devices out of that group.
+  If nobody has an iPhone, you can leave the badge automations disabled.
+- **Android has no badge number.** Android launchers may show a notification dot while an alert is in the
+  tray (OS behaviour, not tested with the framework). An Android badge-sync equivalent is not implemented.
+- **Interruption levels (iOS only).** `time-sensitive` and `critical` interruption levels are iOS
+  notification features; Android ignores them. The framework also sets an Android notification `channel`
+  per severity, which iOS ignores.
 
 ## Known pitfalls
 

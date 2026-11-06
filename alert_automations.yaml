@@ -445,8 +445,9 @@
   description: >
     Silently updates the app badge count when the active alert count changes
     and on HA startup. Always sets badge to the current active alert count.
-    If count is 0 the badge is cleared. Uses delete_alert message which is
-    silent on both iOS and Android.
+    If count is 0 the badge is cleared. Uses the delete_alert message, which is a
+    silent badge update on iOS only (Android would show it as text). It is sent to
+    notify.badge_audience, which should list iOS devices only.
   mode: queued
   max: 10
 
@@ -461,7 +462,7 @@
   action:
     - delay: >
         {% if trigger.id == 'startup' %}00:00:30{% else %}00:00:02{% endif %}
-    - service: notify.minor_audience
+    - service: notify.badge_audience
       data:
         message: delete_alert
         data:
@@ -537,7 +538,7 @@
 #
 # Fires every 10 minutes to resync the app badge count. iOS clears the badge
 # count when the app is opened, so this ensures it stays accurate even when
-# no alert state changes occur. Uses the same silent delete_alert approach
+# no alert state changes occur. Uses the same iOS-only delete_alert approach
 # as the badge sync automation.
 ###############################################################################
 
@@ -555,7 +556,7 @@
       minutes: "/10"
 
   action:
-    - service: notify.minor_audience
+    - service: notify.badge_audience
       data:
         message: delete_alert
         data:

@@ -9,32 +9,39 @@
 # Changes require a full HA restart (notify platform cannot be reloaded).
 #
 # Audience structure:
-#   minor_audience   — minor, major and critical alerts
-#   major_audience   — major and critical alerts
-#   critical_audience — critical alerts only
+#   minor_audience    — minor alerts
+#   major_audience    — major alerts
+#   security_audience — security alerts
+#   critical_audience — critical alerts
+# Each group is independent: list every device that should receive that
+# severity. Replace mobile_app_mafone with your own notify service name,
+# WITHOUT the 'notify.' prefix (notify.mobile_app_x is rejected as an invalid slug).
 ###############################################################################
 
-  - platform: group
-    name: minor_audience
-    services:
-      - action: mobile_app_mafone
+- platform: group
+  name: minor_audience
+  services:
+    - action: mobile_app_mafone
 
-  - platform: group
-    name: major_audience
-    services:
-      - action: mobile_app_mafone
+- platform: group
+  name: major_audience
+  services:
+    - action: mobile_app_mafone
 
-  - platform: group
-    name: action_audience
-    services:
-      - action: mobile_app_mafone
+- platform: group
+  name: critical_audience
+  services:
+    - action: mobile_app_mafone
 
-  - platform: group
-    name: security_audience
-    services:
-      - action: mobile_app_mafone
+- platform: group
+  name: security_audience
+  services:
+    - action: mobile_app_mafone
 
-  - platform: group
-    name: critical_audience
-    services:
-      - action: mobile_app_mafone
+# iOS devices only. Used by the badge sync automations to set the app icon
+# badge count silently. Android has no equivalent (the delete_alert message
+# would be shown as text), so do NOT list Android devices here.
+- platform: group
+  name: badge_audience
+  services:
+    - action: mobile_app_mafone
