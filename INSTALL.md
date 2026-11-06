@@ -296,6 +296,9 @@ title, message and status, with tap = mark done and hold = acknowledge/clear.
   If nobody has an iPhone, you can leave the badge automations disabled.
 - **Android has no badge number.** Android launchers may show a notification dot while an alert is in the
   tray (OS behaviour, not tested with the framework). An Android badge-sync equivalent is not implemented.
+- **"Updating sensors" notification (Android).** If the Android Companion app periodically shows a low-priority
+  "Updating sensors" notification, that is the app's own sensor refresh, not the alert framework. See the
+  [design reference](docs/design-reference.md#platform-notes-ios-and-android) for details.
 - **Interruption levels (iOS only).** `time-sensitive` and `critical` interruption levels are iOS
   notification features; Android ignores them. The framework also sets an Android notification `channel`
   per severity, which iOS ignores.
